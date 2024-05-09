@@ -45,7 +45,7 @@ install requirements of ours
 - Data
 
     ```
-    ├── L2p
+    ├── bp-algorithm
     ├── datasets
     │   ├── splits
     │   │   ├── bcg_dataset
@@ -80,4 +80,12 @@ python train.py python train.py --lamb 1 --config_file core/config/dl/resnet/res
 ```
 docker load < /mlainas/yewon/bp_yewon.tar
 ```
+
+## Dataset & model
+```
+cp /mlainas/yewon/bp-benchmark/bp-algorithm/datasets bp-algorithm/datasets
+cp /mlainas/yewon/bp-benchmark/bp-algorithm/code/train/real_model bp-algorithm/code/train/real_model
+
+```
+
 
