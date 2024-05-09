@@ -1,0 +1,8 @@
+code/train/model_original
+code/train/model-resnet1d
+code/train/model-resnet1d_
+code/train/model-spectroresnet
+results/
+real_results/
+real_model
+*.pt
