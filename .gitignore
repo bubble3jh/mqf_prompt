@@ -2,6 +2,7 @@ code/train/model_original
 code/train/model-resnet1d
 code/train/model-resnet1d_
 code/train/model-spectroresnet
+code/train/mlruns
 results/
 real_results/
 real_model
