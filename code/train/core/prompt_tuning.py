@@ -4,6 +4,10 @@ import torch
 import copy
 import torch.nn.functional as F
 import csv
+import numpy as np
+from sklearn.decomposition import PCA
+from pyts.decomposition import SingularSpectrumAnalysis
+import pywt
 
 def hook_fn(module, input, output):
     global hidden_output
@@ -64,6 +68,59 @@ class SimpleLinear(nn.Module):
         x = self.linear(x)
         return x
 
+
+class PPGEmbeddingGenerator:
+    def __init__(self, group_embedding_dim=64, num_groups=None):
+        self.group_embedding_dim = group_embedding_dim
+        self.group_lookup_table = nn.Embedding(num_groups, group_embedding_dim) if num_groups is not None else None
+
+    def pca_transform(self, data, num_components=64):
+        reshaped_data = data.view(data.size(0), -1).cpu().numpy()
+        pca = PCA(n_components=min(num_components, reshaped_data.shape[1]))
+        transformed_data = pca.fit_transform(reshaped_data)
+        return torch.tensor(transformed_data, dtype=torch.float32, device=data.device)
+
+    def ssa_transform(self, data, window_size=125, groups=20):
+        reshaped_data = data.view(data.size(0), -1).cpu().numpy()
+        ssa = SingularSpectrumAnalysis(window_size=min(window_size, reshaped_data.shape[1]//2), groups=min(groups, reshaped_data.shape[1]//5))
+        transformed_data = ssa.fit_transform(reshaped_data)
+        return torch.tensor(transformed_data, dtype=torch.float32, device=data.device)
+
+    def wavelet_transform(self, data, wavelet_name='db1', num_components=64, level=5):
+        transformed_data = []
+        for batch in data:
+            coeffs = pywt.wavedec(batch.cpu().numpy().flatten(), wavelet_name, level=min(level, int(np.log2(batch.numel()))-1))
+            flat_coeffs = np.concatenate(coeffs)
+            transformed_data.append(flat_coeffs[:num_components])
+        transformed_data = np.array(transformed_data)
+        return torch.tensor(transformed_data, dtype=torch.float32, device=data.device)
+
+    def fft_transform(self, data, num_components=313):
+        reshaped_data = data.view(data.size(0), -1).cpu().numpy()
+        transformed_data = np.fft.fft(reshaped_data, axis=1)
+        return torch.tensor(np.real(transformed_data[:, :num_components]), dtype=torch.float32, device=data.device)
+    
+    def gen_ppg_emb(self, ppg, group_label=None):
+        # Ensure the input data is in the correct shape
+        assert len(ppg.shape) == 3 and ppg.shape[1] == 1, "PPG data should be in shape [batch_size, 1, seq_len]"
+        embeddings=[]
+        # Generate PCA embedding
+        pca_emb = self.pca_transform(ppg, num_components=64)
+        embeddings.append(pca_emb)
+        
+        # Generate SSA embedding
+        # ssa_emb = self.ssa_transform(ppg)
+        # embeddings.append(ssa_emb)
+        
+        # Generate FFT embedding
+        fft_emb = self.fft_transform(ppg, num_components=64)
+        embeddings.append(fft_emb)
+        
+        # Generate Wavelet embedding
+        wavelet_emb = self.wavelet_transform(ppg, num_components=64)
+        embeddings.append(wavelet_emb)
+
+        return embeddings
     
 class L2Prompt(nn.Module):
     def __init__(self, config, model_config, x_min, x_max):
@@ -75,10 +132,15 @@ class L2Prompt(nn.Module):
         self.k = config.k
         self.num_pool = config.num_pool
         self.penalty = config.penalty
-        self.cnn_layer = SimpleCNN()
-        self.prompt_cnn = PromptCNN()
-        #self.linear_layer = SimpleLinear(model_config["data_dim"])
-        
+        self.use_group = config.use_group
+
+        if self.use_group:
+            self.group_embedding_dim = 64 #config.group_embedding_dim
+            self.num_groups = 4 #config.num_groups
+            self.group_embedder = nn.Embedding(self.num_groups, self.group_embedding_dim)
+
+        self.ppg_embedding_generator = PPGEmbeddingGenerator(self.group_embedding_dim)
+            
         if self.config.fixed_key:
             self.keys = torch.randn(self.num_pool,self.model_config["data_dim"]) #(10, 625)
             self.keys = self.keys.cuda()
@@ -90,7 +152,6 @@ class L2Prompt(nn.Module):
             self.prompt = self.prompt.cuda()
         else:    
             self.prompt = nn.Parameter(torch.randn(self.num_pool , self.model_config["data_dim"]))
-        self.frequency_dict = None 
         
     def count_frequencies(self, tensor,k): 
         unique_values, counts = torch.unique(tensor, return_counts=True)
@@ -100,52 +161,32 @@ class L2Prompt(nn.Module):
         for value, count in zip(unique_values, counts):
             frequencies[value.item()] = count.item()
         return frequencies   
-   
-    def forward(self, x, mode): 
+    
+    def forward(self, x, mode, group_labels): 
         bz = x['ppg'].shape[0]   
         
-        if self.config.exp.data_name == 'bcg' and self.config.cnn:
-            x['ppg'] = self.cnn_layer(x['ppg'])
-        prompt_cnn = self.prompt_cnn(self.prompt)    
+        group_embedding = self.group_embedder(group_labels)                           # torch.Size([256, 64])
+        # Generate PPG embeddings using PPGEmbeddingGenerator
+        # PCA: torch.Size([256, 64]), (del)SSA: torch.Size([256, 20, 625]), FFT: torch.Size([256, 64]), Wavelet: torch.Size([256, 64])
+        embeddings = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels)
+        import pdb;pdb.set_trace()
+        
         score_ = 1 - F.cosine_similarity(x['ppg'], self.keys, dim=-1) #cos distance        
         score, idx = torch.topk(score_,self.k,largest=False, axis=-1)
         idx = idx.squeeze()
         probs = F.softmax(score_, dim = -1)
         entropy = -(probs * torch.log(probs)).sum(dim=-1).mean()      
         
-        if self.config.cnn:
-            if self.k != 1:
-                if bz == 1:
-                    prompt = prompt_cnn[idx, :].mean(dim=0).unsqueeze(dim=0).unsqueeze(dim=0)
-                else:
-                    
-                    prompt = prompt_cnn[idx, :].mean(dim=1).unsqueeze(dim=1)
+        if self.k != 1:
+            if bz == 1:
+                prompt = self.prompt[idx, :].mean(dim=0).unsqueeze(dim=0).unsqueeze(dim=0)
             else:
-                if bz == 1:
-                    prompt = prompt_cnn[idx.long(), :].unsqueeze(dim=0).unsqueeze(dim=0)
-                else:    
-                    prompt = prompt_cnn[idx.long(), :].unsqueeze(dim=1)
-        
+                prompt = self.prompt[idx, :].mean(dim=1).unsqueeze(dim=1)
         else:
-            if self.k != 1:
-                if bz == 1:
-                    prompt = self.prompt[idx, :].mean(dim=0).unsqueeze(dim=0).unsqueeze(dim=0)
-                else:
-                    
-                    prompt = self.prompt[idx, :].mean(dim=1).unsqueeze(dim=1)
-            else:
-                if bz == 1:
-                    prompt = self.prompt[idx.long(), :].unsqueeze(dim=0).unsqueeze(dim=0)
-                else:    
-                    prompt = self.prompt[idx.long(), :].unsqueeze(dim=1)
-            
-        
-        self.frequency_dict = [self.count_frequencies(idx, self.k)]        
-        #with open(f'/mlainas/yewon/bp-benchmark/freq_{self.config.penalty}_{mode}.csv', 'a', newline='') as csvfile:
-        #    writer = csv.writer(csvfile)
-        #    # 데이터 쓰기
-        #    for row in [self.frequency_dict]:
-        #        writer.writerow(row)
+            if bz == 1:
+                prompt = self.prompt[idx.long(), :].unsqueeze(dim=0).unsqueeze(dim=0)
+            else:    
+                prompt = self.prompt[idx.long(), :].unsqueeze(dim=1)
                         
         if self.config.glonorm:
             prompt = global_normalizer(prompt, self.x_min, self.x_max)
@@ -154,18 +195,7 @@ class L2Prompt(nn.Module):
             prompted = x['ppg']*self.config.global_coeff*prompt
         else:    
             prompted = x['ppg'] + self.config.global_coeff*prompt
-        '''
-        if mode == 'test':
-            b = prompt.cpu().numpy()
-            c = prompted.cpu().numpy()
-            d = x['ppg'].cpu().numpy()
-            import numpy as np
-            np.save(f'/mlainas/yewon/bp-benchmark/prompt_{self.config.penalty}_{mode}.npy', b)
-            np.save(f'/mlainas/yewon/bp-benchmark/prompted_{self.config.penalty}_{mode}.npy', c)
-            np.save(f'/mlainas/yewon/bp-benchmark/data_{self.config.penalty}_{mode}.npy', d)
-       '''     
-        
-        torch.save(prompt, 'prompt.pt')
+        # torch.save(prompt, 'prompt.pt')
         
         score = score.mean()
         
@@ -199,8 +229,7 @@ class Custom_model(pl.LightningModule):
             x_ppg, y, group, x_abp, peakmask, vlymask = batch
         else:
             x_ppg, y, x_abp, peakmask, vlymask = batch
-        
-        merged, l2pscore, entropy = self.prompt_learner_glo(x_ppg, mode)
+        merged, l2pscore, entropy = self.prompt_learner_glo(x_ppg, mode, group)
 
         if self.config.normalize:
             merged = normalizer(x_ppg["ppg"], merged)

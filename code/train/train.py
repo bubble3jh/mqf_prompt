@@ -54,6 +54,7 @@ def get_parser():
     parser.add_argument("--fixed_prompt" , action='store_true')  
     parser.add_argument("--trans" , action='store_true')  
     parser.add_argument("--cnn" , action='store_true')  
+    parser.add_argument("--use_group" , action='store_false')  
     
     
     return parser

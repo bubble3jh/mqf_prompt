@@ -1,7 +1,7 @@
 
 import torch
 import pytorch_lightning as pl
-from pytorch_lightning.utilities import DeviceType, parsing, rank_zero_warn
+from pytorch_lightning.utilities import parsing, rank_zero_warn
 from torchmetrics import Metric
 
 #%%
