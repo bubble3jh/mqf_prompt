@@ -1,0 +1,179 @@
+    | Name                                      | Type               | Params
+-----------------------------------------------------------------------------------
+0   | criterion                                 | MSELoss            | 0     
+1   | model                                     | ResNet1D           | 486 K 
+2   | model.first_block_conv                    | MyConv1dPadSame    | 192   
+3   | model.first_block_conv.conv               | Conv1d             | 192   
+4   | model.first_block_bn                      | BatchNorm1d        | 64    
+5   | model.first_block_relu                    | ReLU               | 0     
+6   | model.first_block_maxpool                 | MyMaxPool1dPadSame | 0     
+7   | model.first_block_maxpool.max_pool        | MaxPool1d          | 0     
+8   | model.basicblock_list                     | ModuleList         | 485 K 
+9   | model.basicblock_list.0                   | BasicBlock         | 3.5 K 
+10  | model.basicblock_list.0.bn1               | BatchNorm1d        | 64    
+11  | model.basicblock_list.0.relu1             | ReLU               | 0     
+12  | model.basicblock_list.0.do1               | Dropout            | 0     
+13  | model.basicblock_list.0.conv1             | MyConv1dPadSame    | 1.6 K 
+14  | model.basicblock_list.0.conv1.conv        | Conv1d             | 1.6 K 
+15  | model.basicblock_list.0.bn2               | BatchNorm1d        | 64    
+16  | model.basicblock_list.0.relu2             | ReLU               | 0     
+17  | model.basicblock_list.0.do2               | Dropout            | 0     
+18  | model.basicblock_list.0.conv2             | MyConv1dPadSame    | 1.6 K 
+19  | model.basicblock_list.0.conv2.conv        | Conv1d             | 1.6 K 
+20  | model.basicblock_list.0.max_pool          | MyMaxPool1dPadSame | 0     
+21  | model.basicblock_list.0.max_pool.max_pool | MaxPool1d          | 0     
+22  | model.basicblock_list.0.se                | SE_Block           | 256   
+23  | model.basicblock_list.0.se.squeeze        | AdaptiveAvgPool1d  | 0     
+24  | model.basicblock_list.0.se.excitation     | Sequential         | 256   
+25  | model.basicblock_list.0.se.excitation.0   | Linear             | 128   
+26  | model.basicblock_list.0.se.excitation.1   | ReLU               | 0     
+27  | model.basicblock_list.0.se.excitation.2   | Linear             | 128   
+28  | model.basicblock_list.0.se.excitation.3   | Sigmoid            | 0     
+29  | model.basicblock_list.1                   | BasicBlock         | 3.5 K 
+30  | model.basicblock_list.1.bn1               | BatchNorm1d        | 64    
+31  | model.basicblock_list.1.relu1             | ReLU               | 0     
+32  | model.basicblock_list.1.do1               | Dropout            | 0     
+33  | model.basicblock_list.1.conv1             | MyConv1dPadSame    | 1.6 K 
+34  | model.basicblock_list.1.conv1.conv        | Conv1d             | 1.6 K 
+35  | model.basicblock_list.1.bn2               | BatchNorm1d        | 64    
+36  | model.basicblock_list.1.relu2             | ReLU               | 0     
+37  | model.basicblock_list.1.do2               | Dropout            | 0     
+38  | model.basicblock_list.1.conv2             | MyConv1dPadSame    | 1.6 K 
+39  | model.basicblock_list.1.conv2.conv        | Conv1d             | 1.6 K 
+40  | model.basicblock_list.1.max_pool          | MyMaxPool1dPadSame | 0     
+41  | model.basicblock_list.1.max_pool.max_pool | MaxPool1d          | 0     
+42  | model.basicblock_list.1.se                | SE_Block           | 256   
+43  | model.basicblock_list.1.se.squeeze        | AdaptiveAvgPool1d  | 0     
+44  | model.basicblock_list.1.se.excitation     | Sequential         | 256   
+45  | model.basicblock_list.1.se.excitation.0   | Linear             | 128   
+46  | model.basicblock_list.1.se.excitation.1   | ReLU               | 0     
+47  | model.basicblock_list.1.se.excitation.2   | Linear             | 128   
+48  | model.basicblock_list.1.se.excitation.3   | Sigmoid            | 0     
+49  | model.basicblock_list.2                   | BasicBlock         | 10.0 K
+50  | model.basicblock_list.2.bn1               | BatchNorm1d        | 64    
+51  | model.basicblock_list.2.relu1             | ReLU               | 0     
+52  | model.basicblock_list.2.do1               | Dropout            | 0     
+53  | model.basicblock_list.2.conv1             | MyConv1dPadSame    | 3.1 K 
+54  | model.basicblock_list.2.conv1.conv        | Conv1d             | 3.1 K 
+55  | model.basicblock_list.2.bn2               | BatchNorm1d        | 128   
+56  | model.basicblock_list.2.relu2             | ReLU               | 0     
+57  | model.basicblock_list.2.do2               | Dropout            | 0     
+58  | model.basicblock_list.2.conv2             | MyConv1dPadSame    | 6.2 K 
+59  | model.basicblock_list.2.conv2.conv        | Conv1d             | 6.2 K 
+60  | model.basicblock_list.2.max_pool          | MyMaxPool1dPadSame | 0     
+61  | model.basicblock_list.2.max_pool.max_pool | MaxPool1d          | 0     
+62  | model.basicblock_list.2.se                | SE_Block           | 512   
+63  | model.basicblock_list.2.se.squeeze        | AdaptiveAvgPool1d  | 0     
+64  | model.basicblock_list.2.se.excitation     | Sequential         | 512   
+65  | model.basicblock_list.2.se.excitation.0   | Linear             | 256   
+66  | model.basicblock_list.2.se.excitation.1   | ReLU               | 0     
+67  | model.basicblock_list.2.se.excitation.2   | Linear             | 256   
+68  | model.basicblock_list.2.se.excitation.3   | Sigmoid            | 0     
+69  | model.basicblock_list.3                   | BasicBlock         | 13.2 K
+70  | model.basicblock_list.3.bn1               | BatchNorm1d        | 128   
+71  | model.basicblock_list.3.relu1             | ReLU               | 0     
+72  | model.basicblock_list.3.do1               | Dropout            | 0     
+73  | model.basicblock_list.3.conv1             | MyConv1dPadSame    | 6.2 K 
+74  | model.basicblock_list.3.conv1.conv        | Conv1d             | 6.2 K 
+75  | model.basicblock_list.3.bn2               | BatchNorm1d        | 128   
+76  | model.basicblock_list.3.relu2             | ReLU               | 0     
+77  | model.basicblock_list.3.do2               | Dropout            | 0     
+78  | model.basicblock_list.3.conv2             | MyConv1dPadSame    | 6.2 K 
+79  | model.basicblock_list.3.conv2.conv        | Conv1d             | 6.2 K 
+80  | model.basicblock_list.3.max_pool          | MyMaxPool1dPadSame | 0     
+81  | model.basicblock_list.3.max_pool.max_pool | MaxPool1d          | 0     
+82  | model.basicblock_list.3.se                | SE_Block           | 512   
+83  | model.basicblock_list.3.se.squeeze        | AdaptiveAvgPool1d  | 0     
+84  | model.basicblock_list.3.se.excitation     | Sequential         | 512   
+85  | model.basicblock_list.3.se.excitation.0   | Linear             | 256   
+86  | model.basicblock_list.3.se.excitation.1   | ReLU               | 0     
+87  | model.basicblock_list.3.se.excitation.2   | Linear             | 256   
+88  | model.basicblock_list.3.se.excitation.3   | Sigmoid            | 0     
+89  | model.basicblock_list.4                   | BasicBlock         | 39.6 K
+90  | model.basicblock_list.4.bn1               | BatchNorm1d        | 128   
+91  | model.basicblock_list.4.relu1             | ReLU               | 0     
+92  | model.basicblock_list.4.do1               | Dropout            | 0     
+93  | model.basicblock_list.4.conv1             | MyConv1dPadSame    | 12.4 K
+94  | model.basicblock_list.4.conv1.conv        | Conv1d             | 12.4 K
+95  | model.basicblock_list.4.bn2               | BatchNorm1d        | 256   
+96  | model.basicblock_list.4.relu2             | ReLU               | 0     
+97  | model.basicblock_list.4.do2               | Dropout            | 0     
+98  | model.basicblock_list.4.conv2             | MyConv1dPadSame    | 24.7 K
+99  | model.basicblock_list.4.conv2.conv        | Conv1d             | 24.7 K
+100 | model.basicblock_list.4.max_pool          | MyMaxPool1dPadSame | 0     
+101 | model.basicblock_list.4.max_pool.max_pool | MaxPool1d          | 0     
+102 | model.basicblock_list.4.se                | SE_Block           | 2.0 K 
+103 | model.basicblock_list.4.se.squeeze        | AdaptiveAvgPool1d  | 0     
+104 | model.basicblock_list.4.se.excitation     | Sequential         | 2.0 K 
+105 | model.basicblock_list.4.se.excitation.0   | Linear             | 1.0 K 
+106 | model.basicblock_list.4.se.excitation.1   | ReLU               | 0     
+107 | model.basicblock_list.4.se.excitation.2   | Linear             | 1.0 K 
+108 | model.basicblock_list.4.se.excitation.3   | Sigmoid            | 0     
+109 | model.basicblock_list.5                   | BasicBlock         | 52.0 K
+110 | model.basicblock_list.5.bn1               | BatchNorm1d        | 256   
+111 | model.basicblock_list.5.relu1             | ReLU               | 0     
+112 | model.basicblock_list.5.do1               | Dropout            | 0     
+113 | model.basicblock_list.5.conv1             | MyConv1dPadSame    | 24.7 K
+114 | model.basicblock_list.5.conv1.conv        | Conv1d             | 24.7 K
+115 | model.basicblock_list.5.bn2               | BatchNorm1d        | 256   
+116 | model.basicblock_list.5.relu2             | ReLU               | 0     
+117 | model.basicblock_list.5.do2               | Dropout            | 0     
+118 | model.basicblock_list.5.conv2             | MyConv1dPadSame    | 24.7 K
+119 | model.basicblock_list.5.conv2.conv        | Conv1d             | 24.7 K
+120 | model.basicblock_list.5.max_pool          | MyMaxPool1dPadSame | 0     
+121 | model.basicblock_list.5.max_pool.max_pool | MaxPool1d          | 0     
+122 | model.basicblock_list.5.se                | SE_Block           | 2.0 K 
+123 | model.basicblock_list.5.se.squeeze        | AdaptiveAvgPool1d  | 0     
+124 | model.basicblock_list.5.se.excitation     | Sequential         | 2.0 K 
+125 | model.basicblock_list.5.se.excitation.0   | Linear             | 1.0 K 
+126 | model.basicblock_list.5.se.excitation.1   | ReLU               | 0     
+127 | model.basicblock_list.5.se.excitation.2   | Linear             | 1.0 K 
+128 | model.basicblock_list.5.se.excitation.3   | Sigmoid            | 0     
+129 | model.basicblock_list.6                   | BasicBlock         | 156 K 
+130 | model.basicblock_list.6.bn1               | BatchNorm1d        | 256   
+131 | model.basicblock_list.6.relu1             | ReLU               | 0     
+132 | model.basicblock_list.6.do1               | Dropout            | 0     
+133 | model.basicblock_list.6.conv1             | MyConv1dPadSame    | 49.4 K
+134 | model.basicblock_list.6.conv1.conv        | Conv1d             | 49.4 K
+135 | model.basicblock_list.6.bn2               | BatchNorm1d        | 512   
+136 | model.basicblock_list.6.relu2             | ReLU               | 0     
+137 | model.basicblock_list.6.do2               | Dropout            | 0     
+138 | model.basicblock_list.6.conv2             | MyConv1dPadSame    | 98.6 K
+139 | model.basicblock_list.6.conv2.conv        | Conv1d             | 98.6 K
+140 | model.basicblock_list.6.max_pool          | MyMaxPool1dPadSame | 0     
+141 | model.basicblock_list.6.max_pool.max_pool | MaxPool1d          | 0     
+142 | model.basicblock_list.6.se                | SE_Block           | 8.2 K 
+143 | model.basicblock_list.6.se.squeeze        | AdaptiveAvgPool1d  | 0     
+144 | model.basicblock_list.6.se.excitation     | Sequential         | 8.2 K 
+145 | model.basicblock_list.6.se.excitation.0   | Linear             | 4.1 K 
+146 | model.basicblock_list.6.se.excitation.1   | ReLU               | 0     
+147 | model.basicblock_list.6.se.excitation.2   | Linear             | 4.1 K 
+148 | model.basicblock_list.6.se.excitation.3   | Sigmoid            | 0     
+149 | model.basicblock_list.7                   | BasicBlock         | 206 K 
+150 | model.basicblock_list.7.bn1               | BatchNorm1d        | 512   
+151 | model.basicblock_list.7.relu1             | ReLU               | 0     
+152 | model.basicblock_list.7.do1               | Dropout            | 0     
+153 | model.basicblock_list.7.conv1             | MyConv1dPadSame    | 98.6 K
+154 | model.basicblock_list.7.conv1.conv        | Conv1d             | 98.6 K
+155 | model.basicblock_list.7.bn2               | BatchNorm1d        | 512   
+156 | model.basicblock_list.7.relu2             | ReLU               | 0     
+157 | model.basicblock_list.7.do2               | Dropout            | 0     
+158 | model.basicblock_list.7.conv2             | MyConv1dPadSame    | 98.6 K
+159 | model.basicblock_list.7.conv2.conv        | Conv1d             | 98.6 K
+160 | model.basicblock_list.7.max_pool          | MyMaxPool1dPadSame | 0     
+161 | model.basicblock_list.7.max_pool.max_pool | MaxPool1d          | 0     
+162 | model.basicblock_list.7.se                | SE_Block           | 8.2 K 
+163 | model.basicblock_list.7.se.squeeze        | AdaptiveAvgPool1d  | 0     
+164 | model.basicblock_list.7.se.excitation     | Sequential         | 8.2 K 
+165 | model.basicblock_list.7.se.excitation.0   | Linear             | 4.1 K 
+166 | model.basicblock_list.7.se.excitation.1   | ReLU               | 0     
+167 | model.basicblock_list.7.se.excitation.2   | Linear             | 4.1 K 
+168 | model.basicblock_list.7.se.excitation.3   | Sigmoid            | 0     
+169 | model.final_bn                            | BatchNorm1d        | 512   
+170 | model.final_relu                          | ReLU               | 0     
+171 | model.main_clf                            | Linear             | 514   
+-----------------------------------------------------------------------------------
+486 K     Trainable params
+0         Non-trainable params
+486 K     Total params
+1.945     Total estimated model params size (MB)

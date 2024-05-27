@@ -36,7 +36,7 @@ def get_parser():
     parser.add_argument("--global_coeff", type=float, default=1.0)
     parser.add_argument("--gen_coeff", type=float, default=1.0)
     parser.add_argument("--method", choices=["original", "prompt_global"])
-    parser.add_argument("--root_dir", default="/mlainas/yewon/bp-benchmark/")
+    parser.add_argument("--root_dir", default="./")
     parser.add_argument("--result_dirname", default="results")
     parser.add_argument("--layer_num", default=0, type=int)
     parser.add_argument("--glonorm", action="store_true")

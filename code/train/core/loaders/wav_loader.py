@@ -38,7 +38,6 @@ class WavDataModule(pl.LightningDataModule):
                           worker_init_fn=seed_worker)
         
     def train_dataloader(self, is_print=False):
-        import pdb;pdb.set_trace()
         return self._get_loader(self.folds_train, "train", is_print=is_print)
 
     def val_dataloader(self, is_print=False):

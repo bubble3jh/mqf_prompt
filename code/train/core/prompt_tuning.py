@@ -102,7 +102,6 @@ class L2Prompt(nn.Module):
         return frequencies   
    
     def forward(self, x, mode): 
-        
         bz = x['ppg'].shape[0]   
         
         if self.config.exp.data_name == 'bcg' and self.config.cnn:

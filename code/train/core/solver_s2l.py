@@ -201,13 +201,20 @@ class SolverS2l(Solver):
             # Define optimizer with different learning rates for prompt_learner and other parameters
 
             early_stop_callback = EarlyStopping(**dict(self.config.param_early_stop))
-            checkpoint_callback = ModelCheckpoint(**dict(self.config.logger.param_ckpt))
+            # checkpoint_callback = ModelCheckpoint(**dict(self.config.logger.param_ckpt))
             lr_logger = LearningRateMonitor()
-            trainer = MyTrainer(**dict(self.config.param_trainer), callbacks=[early_stop_callback, checkpoint_callback, lr_logger ])
+            # trainer = MyTrainer(**dict(self.config.param_trainer), callbacks=[early_stop_callback, checkpoint_callback, lr_logger ])
             #--- trainer main loop
 
             mf.pytorch.autolog()
             with mf.start_run(run_name=f"cv{foldIdx}", nested=True) as run:
+                artifact_uri = mf.get_artifact_uri()
+                checkpoint_callback = ModelCheckpoint(
+                    **dict(self.config.logger.param_ckpt),
+                    dirpath=f"{artifact_uri}/restored_model_checkpoint"
+                )
+                trainer = MyTrainer(**dict(self.config.param_trainer), callbacks=[early_stop_callback, checkpoint_callback, lr_logger])
+                
                 # train
                 trainer.fit(model, dm)
                 print("run_id", run.info.run_id)
@@ -215,7 +222,16 @@ class SolverS2l(Solver):
 
                 # load best ckpt
                 ckpt_path_abs = str(Path(artifact_uri)/ckpt_path[0])
-                #model = self._get_model(ckpt_path_abs=ckpt_path_abs)
+                if self.config.method.startswith("prompt"): 
+                    model = Custom_model.load_from_checkpoint(ckpt_path_abs, 
+                                                        model=res_model, 
+                                                        data_shape=data_shape, 
+                                                        model_config=model_config, 
+                                                        config=self.config, 
+                                                        stats=stats)
+                else:
+                    model = self._get_model(ckpt_path_abs=ckpt_path_abs)
+                # model = self._get_model(ckpt_path_abs=ckpt_path_abs)
 
                 # evaluate
                 val_outputs = trainer.validate(model=model, val_dataloaders=dm.val_dataloader(), verbose=False)

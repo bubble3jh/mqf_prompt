@@ -1,0 +1,4 @@
+artifact_location: /data1/bubble3jh/bp_L2P/code/train/mlruns/1
+experiment_id: '1'
+lifecycle_stage: active
+name: bcg-resnet1d

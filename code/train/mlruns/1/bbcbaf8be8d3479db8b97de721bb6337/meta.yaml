@@ -1,0 +1,15 @@
+artifact_uri: /data1/bubble3jh/bp_L2P/code/train/mlruns/1/bbcbaf8be8d3479db8b97de721bb6337/artifacts
+end_time: 1716702063508
+entry_point_name: ''
+experiment_id: '1'
+lifecycle_stage: active
+name: ''
+run_id: bbcbaf8be8d3479db8b97de721bb6337
+run_uuid: bbcbaf8be8d3479db8b97de721bb6337
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1716702055066
+status: 4
+tags: []
+user_id: bubble3jh
