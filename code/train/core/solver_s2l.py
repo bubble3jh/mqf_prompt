@@ -1,11 +1,14 @@
 #%%
 import os
+import wandb
 import joblib
 from shutil import rmtree
 import pandas as pd
 import numpy as np 
 from scipy.io import loadmat
 from glob import glob
+import pytorch_lightning as pl
+from sklearn.decomposition import PCA
 
 # Load loaders
 from core.loaders import *
@@ -13,7 +16,8 @@ from core.solver_s2s import Solver
 #####################################################
 #####################################################
 from core.utils import (get_nested_fold_idx, get_ckpt, cal_metric, cal_statistics, mat2df, to_group,
-                        remove_outlier, group_annot)
+                        remove_outlier, group_annot, group_count, group_shot, transferring)
+
 from core.load_model import model_fold
 from core.model_config import model_configuration
 #####################################################
@@ -32,6 +36,8 @@ import coloredlogs, logging
 from pathlib import Path
 import warnings
 import pdb
+from omegaconf import OmegaConf
+
 warnings.filterwarnings("ignore")
 
 coloredlogs.install()
@@ -40,9 +46,37 @@ logger = logging.getLogger(__name__)
 #%%
     
 class SolverS2l(Solver):
-    def _get_model(self, ckpt_path_abs=None):
+    # def __init__(self, config, transfer):
+    #     super(SolverS2l, self).__init__()
+    #     self.transfer
+    def _get_model(self, ckpt_path_abs=None, fold=None):
         model = None
-        ckpt_path_abs
+        if self.config.transfer:
+            if self.config.exp.model_type == "resnet1d":
+                if self.config.transfer == "uci2":
+                    fold=0
+                backbone_name = f"{self.config.transfer}-{self.config.exp.model_type}"
+                if self.config.method == "original": # TODO
+                    if self.config.scratch:
+                        self.transfer_config_path = f"./core/config/dl/resnet/resnet_{self.config.transfer}.yaml"
+                        self.transfer_config = OmegaConf.load(self.transfer_config_path)
+                        self.transfer_config = transferring(self.config, self.transfer_config)
+                        model = Resnet1d_original(self.transfer_config.param_model, random_state=self.transfer_config.exp.random_state)
+                    else:
+                        model = Resnet1d_original.load_from_checkpoint(f"pretrained_models/{backbone_name}/fold{fold}.ckpt")
+                        model.param_model.lr = self.config.param_model.lr
+                        model.param_model.wd = self.config.param_model.wd
+                        model.param_model.batch_size = self.config.param_model.batch_size
+                else:
+                    model = Resnet1d.load_from_checkpoint(f"pretrained_models/{backbone_name}/fold{fold}.ckpt")
+                # Initialize Classifier
+                model.model.main_clf = nn.Linear(in_features=model.model.main_clf.in_features,
+                                                 out_features=model.model.main_clf.out_features,
+                                                 bias=model.model.main_clf.bias is not None)
+                print(f"####### Load {self.config.exp.model_type} backbone model pre-trained by {self.config.transfer} #######")
+            else:
+                NotImplementedError
+            return model
         if not ckpt_path_abs:
             if self.config.exp.model_type == "resnet1d":
                 if self.config.method == "original":
@@ -162,6 +196,9 @@ class SolverS2l(Solver):
             #if foldIdx==1: break
             train_df = pd.concat(np.array(all_split_df)[folds_train])
             val_df = pd.concat(np.array(all_split_df)[folds_val])
+            if self.config.shots: # train and validate with few-shot
+                train_df = group_shot(train_df, n=self.config.shots)
+                val_df = group_shot(val_df, n=5)
             test_df = pd.concat(np.array(all_split_df)[folds_test])
             dm.setup_kfold(train_df, val_df, test_df)
 
@@ -175,8 +212,12 @@ class SolverS2l(Solver):
             if self.config.method.startswith("prompt"):
                 #--- Init model\ ##
                 data_name = self.config.exp["data_name"]
-                ck_path = os.path.join(self.config.root_dir, "models", model_fold[data_name][self.config.seed][foldIdx])
-                res_model = self._get_model(ck_path)
+                ck_path = os.path.join(self.config.root_dir, "models", model_fold[self.config.backbone][data_name][self.config.seed][foldIdx])  # yt
+                # ck_path = os.path.join(self.config.root_dir, "models", model_fold[data_name][self.config.seed][foldIdx])                      # yewon
+                if self.config.transfer:
+                    res_model = self._get_model(fold=foldIdx)
+                else:
+                    res_model = self._get_model(ck_path)
                 model_config = model_configuration[data_name]
                 data_shape = model_config["data_dim"]
                 model = Custom_model(res_model, data_shape, model_config, self.config, stats)
@@ -193,7 +234,10 @@ class SolverS2l(Solver):
                         enabled.add(name)
                 print(f"Parameters to be updated: {enabled}")
             
-            if self.config.method == "original":                
+            if self.config.method == "original":       
+                if self.config.transfer:
+                    model = self._get_model(fold=foldIdx)
+                else:         
                     model = self._get_model()
                     
             #####################################################
@@ -221,16 +265,9 @@ class SolverS2l(Solver):
                 artifact_uri, ckpt_path = get_ckpt(mf.get_run(run_id=run.info.run_id))
 
                 # load best ckpt
+                print('load best ckpt')
                 ckpt_path_abs = str(Path(artifact_uri)/ckpt_path[0])
-                if self.config.method.startswith("prompt"): 
-                    model = Custom_model.load_from_checkpoint(ckpt_path_abs, 
-                                                        model=res_model, 
-                                                        data_shape=data_shape, 
-                                                        model_config=model_config, 
-                                                        config=self.config, 
-                                                        stats=stats)
-                else:
-                    model = self._get_model(ckpt_path_abs=ckpt_path_abs)
+                model.load_state_dict(torch.load(ckpt_path_abs)["state_dict"])
                 # model = self._get_model(ckpt_path_abs=ckpt_path_abs)
 
                 # evaluate
@@ -282,6 +319,27 @@ class SolverS2l(Solver):
             #####################################################
             #####################################################
             tmp_metric = cal_metric(err_dict, mode=mode)
+            if mode == 'test':
+                sbp = tmp_metric['test/sbp_mae']
+                dbp = tmp_metric['test/dbp_mae']
+                groups = ['hypo', 'normal', 'prehyper', 'hyper2']
+                sbps = [tmp_metric[f'test/sbp_{group}_mae'] for group in groups]
+                dbps = [tmp_metric[f'test/dbp_{group}_mae'] for group in groups]
+                sbp_gal = sum(sbps) / 4
+                dbp_gal = sum(dbps) / 4
+                gal = sbp_gal + dbp_gal
+                tmp_metric['sbp_gal'] = sbp_gal
+                tmp_metric['dbp_gal'] = dbp_gal
+                tmp_metric['gal'] = gal
+                
+                if not self.config.ignore_wandb:
+                    wandb.log(tmp_metric)
+                    wandb.run.summary['sbp_gal'] = sbp_gal
+                    wandb.run.summary['dbp_gal'] = dbp_gal
+                    wandb.run.summary['gal'] = gal
+                    wandb.run.summary['sbp'] = sbp
+                    wandb.run.summary['dbp'] = dbp
+                    wandb.run.summary['spdp'] = sbp + dbp
             out_metric.update(tmp_metric)
 
         return out_metric
@@ -336,14 +394,40 @@ class SolverS2l(Solver):
 
             dm.setup_kfold(train_df, val_df, test_df)
 
+            # Find scaled ppg_max, ppg_min
+            ppg_min = np.min(dm.train_dataloader().dataset.all_ppg)
+            ppg_max = np.max(dm.train_dataloader().dataset.all_ppg)
+            stats = [ppg_min, ppg_max] 
+            
             #--- load trained model
             if 'param_trainer' in self.config.keys():
                 trainer = MyTrainer(**dict(self.config.param_trainer))
             else:
                 trainer = MyTrainer()
-            #ckpt_apth_abs = glob(f'{self.config.param_test.model_path}{foldIdx}' + '*.ckpt')[0]
-            ckpt_apth_abs = f'{self.config.param_test.model_path}'
-            model = self._get_model(ckpt_path_abs=ckpt_apth_abs)
+            ckpt_path_abs = glob(f'{self.config.param_test.model_path}{foldIdx}' + '*.ckpt')[0]
+
+            if self.config.method.startswith("prompt"):
+                #--- Init model\ ##
+                data_name = self.config.exp["data_name"]
+                if self.config.transfer:
+                    regressor = self._get_model(fold=foldIdx)
+                else:
+                    regressor = self._get_model(ckpt_path_abs) # Load Model # TODO
+                model_config = model_configuration[self.config.backbone][data_name] # Load pre-trained model config
+                data_shape = model_config["data_dim"] 
+                model = Custom_model(regressor, data_shape, model_config, self.config, stats)
+                #model = Custom_model.load_from_checkpoint(ckpt_path_abs) # Call Prompt Model 
+                #import pdb; pdb.set_trace()
+                model.load_state_dict(torch.load(ckpt_path_abs)["state_dict"])
+
+                #model = model.load_from_checkpoint(ckpt_path_abs)
+
+            if self.config.method == "original":
+                if self.config.transfer:
+                    model = self._get_model(fold=foldIdx)
+                else:
+                    model = self._get_model()
+
             model.eval()
             trainer.model = model
 
@@ -378,3 +462,5 @@ class SolverS2l(Solver):
         joblib.dump(results, self.config.param_test.save_path)
 
         print(out_metric)
+
+# %%

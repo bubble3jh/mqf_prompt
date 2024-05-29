@@ -5,9 +5,10 @@ import copy
 import torch.nn.functional as F
 import csv
 import numpy as np
-from sklearn.decomposition import PCA
+from sklearn.decomposition import IncrementalPCA, PCA
 from pyts.decomposition import SingularSpectrumAnalysis
 import pywt
+from core.utils import perform_pca, project_to_pca_plane
 
 def hook_fn(module, input, output):
     global hidden_output
@@ -68,16 +69,22 @@ class SimpleLinear(nn.Module):
         x = self.linear(x)
         return x
 
-
-class PPGEmbeddingGenerator:
-    def __init__(self, group_embedding_dim=64, num_groups=None):
+class PPGEmbeddingGenerator(nn.Module):  
+    def __init__(self, use_group, group_embedding_dim=64, num_groups=4):
+        super(PPGEmbeddingGenerator, self).__init__()  # Initialize the parent class
+        self.use_group = use_group
         self.group_embedding_dim = group_embedding_dim
         self.group_lookup_table = nn.Embedding(num_groups, group_embedding_dim) if num_groups is not None else None
 
-    def pca_transform(self, data, num_components=64):
-        reshaped_data = data.view(data.size(0), -1).cpu().numpy()
-        pca = PCA(n_components=min(num_components, reshaped_data.shape[1]))
-        transformed_data = pca.fit_transform(reshaped_data)
+        
+    # def pca_transform(self, data, num_components=64):
+    #     reshaped_data = data.view(data.size(0), -1).cpu().numpy()
+    #     pca = PCA(n_components=min(num_components, reshaped_data.shape[1]))
+    #     transformed_data = pca.fit_transform(reshaped_data)
+    #     return torch.tensor(transformed_data, dtype=torch.float32, device=data.device)
+
+    def pca_transform(self, data, pca_matrix=None, pca_mean=None):
+        transformed_data = project_to_pca_plane(data, pca_matrix, pca_mean)
         return torch.tensor(transformed_data, dtype=torch.float32, device=data.device)
 
     def ssa_transform(self, data, window_size=125, groups=20):
@@ -100,12 +107,20 @@ class PPGEmbeddingGenerator:
         transformed_data = np.fft.fft(reshaped_data, axis=1)
         return torch.tensor(np.real(transformed_data[:, :num_components]), dtype=torch.float32, device=data.device)
     
-    def gen_ppg_emb(self, ppg, group_label=None):
+    def gen_ppg_emb(self, ppg, groups, pca_matrix, pca_mean):
         # Ensure the input data is in the correct shape
         assert len(ppg.shape) == 3 and ppg.shape[1] == 1, "PPG data should be in shape [batch_size, 1, seq_len]"
+        
+        device = ppg.device  # Get the device of the input PPG data
+        
         embeddings=[]
+        # Generate Group embedding
+        group_emb = self.group_lookup_table(groups.to(device))  # Move groups to the same device as ppg
+        if self.use_group:    
+            embeddings.append(group_emb)
+        
         # Generate PCA embedding
-        pca_emb = self.pca_transform(ppg, num_components=64)
+        pca_emb = self.pca_transform(ppg, pca_matrix, pca_mean)
         embeddings.append(pca_emb)
         
         # Generate SSA embedding
@@ -120,7 +135,10 @@ class PPGEmbeddingGenerator:
         wavelet_emb = self.wavelet_transform(ppg, num_components=64)
         embeddings.append(wavelet_emb)
 
-        return embeddings
+        # Move all embeddings to the same device
+        embeddings = [emb.to(device) for emb in embeddings]
+
+        return torch.stack(embeddings, dim=1)
     
 class L2Prompt(nn.Module):
     def __init__(self, config, model_config, x_min, x_max):
@@ -129,29 +147,27 @@ class L2Prompt(nn.Module):
         self.x_min = x_min
         self.x_max = x_max
         self.model_config = model_config        
-        self.k = config.k
+        # self.k = config.k
         self.num_pool = config.num_pool
         self.penalty = config.penalty
-        self.use_group = config.use_group
-
-        if self.use_group:
-            self.group_embedding_dim = 64 #config.group_embedding_dim
-            self.num_groups = 4 #config.num_groups
-            self.group_embedder = nn.Embedding(self.num_groups, self.group_embedding_dim)
-
-        self.ppg_embedding_generator = PPGEmbeddingGenerator(self.group_embedding_dim)
+        self.top_k = 1 # select top - 1
+        self.ppg_embedding_generator = PPGEmbeddingGenerator(config.use_group, self.model_config["emb_dim"])
             
-        if self.config.fixed_key:
-            self.keys = torch.randn(self.num_pool,self.model_config["data_dim"]) #(10, 625)
-            self.keys = self.keys.cuda()
-        else:
-            self.keys = nn.Parameter(torch.randn(self.num_pool,self.model_config["data_dim"])) #(10, 625)
+        # Initialize learnable parameters for keys and prompts
+        self.keys = nn.Parameter(torch.randn(self.num_pool, 4, self.model_config["emb_dim"]))
+        self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
+    
+        # if self.config.fixed_key:
+        #     self.keys = torch.randn(self.num_pool,self.model_config["data_dim"]) #(10, 625)
+        #     self.keys = self.keys.cuda()
+        # else:
+        #     self.keys = nn.Parameter(torch.randn(self.num_pool,self.model_config["data_dim"])) #(10, 625)
         
-        if self.config.fixed_prompt:
-            self.prompt = torch.randn(self.num_pool , self.model_config["data_dim"])
-            self.prompt = self.prompt.cuda()
-        else:    
-            self.prompt = nn.Parameter(torch.randn(self.num_pool , self.model_config["data_dim"]))
+        # if self.config.fixed_prompt:
+        #     self.prompt = torch.randn(self.num_pool , self.model_config["data_dim"])
+        #     self.prompt = self.prompt.cuda()
+        # else:    
+        #     self.prompt = nn.Parameter(torch.randn(self.num_pool , self.model_config["data_dim"]))
         
     def count_frequencies(self, tensor,k): 
         unique_values, counts = torch.unique(tensor, return_counts=True)
@@ -162,47 +178,49 @@ class L2Prompt(nn.Module):
             frequencies[value.item()] = count.item()
         return frequencies   
     
-    def forward(self, x, mode, group_labels): 
-        bz = x['ppg'].shape[0]   
+    def forward(self, x, group_labels, pca_matrix, pca_mean):
+        bz = x['ppg'].shape[0]
         
-        group_embedding = self.group_embedder(group_labels)                           # torch.Size([256, 64])
-        # Generate PPG embeddings using PPGEmbeddingGenerator
-        # PCA: torch.Size([256, 64]), (del)SSA: torch.Size([256, 20, 625]), FFT: torch.Size([256, 64]), Wavelet: torch.Size([256, 64])
-        embeddings = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels)
-        import pdb;pdb.set_trace()
+        # Generate PPG embeddings
+        queries = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean)
         
-        score_ = 1 - F.cosine_similarity(x['ppg'], self.keys, dim=-1) #cos distance        
-        score, idx = torch.topk(score_,self.k,largest=False, axis=-1)
-        idx = idx.squeeze()
-        probs = F.softmax(score_, dim = -1)
-        entropy = -(probs * torch.log(probs)).sum(dim=-1).mean()      
+        # Normalize queries and keys for cosine similarity calculation
+        norm_queries = F.normalize(queries, p=2, dim=-1)
+        norm_keys = F.normalize(self.keys, p=2, dim=-1)
         
-        if self.k != 1:
-            if bz == 1:
-                prompt = self.prompt[idx, :].mean(dim=0).unsqueeze(dim=0).unsqueeze(dim=0)
-            else:
-                prompt = self.prompt[idx, :].mean(dim=1).unsqueeze(dim=1)
-        else:
-            if bz == 1:
-                prompt = self.prompt[idx.long(), :].unsqueeze(dim=0).unsqueeze(dim=0)
-            else:    
-                prompt = self.prompt[idx.long(), :].unsqueeze(dim=1)
+        # Compute cosine similarities between queries and their corresponding keys
+        cos_sim = torch.einsum('bqd,nqd->bqn', norm_queries, norm_keys)  # Shape: (batch_size, 4, num_prompts)
+        
+        # Find the top-1 key for each query
+        top1_indices = cos_sim.argmax(dim=-1)  # Shape: (batch_size, 4)
+        
+        # Gather the corresponding prompts
+        top1_prompts = self.prompts[top1_indices].squeeze(2)  # Shape: (batch_size, 4, prompt_dim)
+        
+        # Compute matching scores and apply softmax to get weights
+        matching_scores = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
+        weights = F.softmax(matching_scores, dim=-1)  # Shape: (batch_size, 4)
+        
+        # Compute weighted sum of prompts
+        final_prompt = (weights.unsqueeze(-1) * top1_prompts).sum(dim=1, keepdim=True)  # Shape: (batch_size, 1, prompt_dim)
                         
         if self.config.glonorm:
-            prompt = global_normalizer(prompt, self.x_min, self.x_max)
+            final_prompt = global_normalizer(final_prompt, self.x_min, self.x_max)
         
         if self.config.mul:
-            prompted = x['ppg']*self.config.global_coeff*prompt
+            prompted_signal = x['ppg']*self.config.global_coeff*final_prompt
         else:    
-            prompted = x['ppg'] + self.config.global_coeff*prompt
-        # torch.save(prompt, 'prompt.pt')
+            prompted_signal = x['ppg'] + self.config.global_coeff*final_prompt
         
-        score = score.mean()
+        # Calculate pull_constraint loss (similarity loss) using cos_sim
+        sim_pull = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
+        sim_loss = -sim_pull.mean()  # Negative to maximize similarity
+                
+        # Calculate entropy penalty to ensure diverse prompt selection
+        entropy = -(weights * torch.log(weights + 1e-10)).sum(dim=-1).mean()  # Shape: scalar
+        entropy_penalty = -entropy  # Negative to minimize entropy
         
-        if self.config.fixed_key:
-            score = 0.          
-        
-        return prompted, score, entropy
+        return prompted_signal, sim_loss, entropy_penalty
     
 class Custom_model(pl.LightningModule):
     def __init__(self, model, data_shape, model_config, config, stats):
@@ -220,6 +238,10 @@ class Custom_model(pl.LightningModule):
             self.criterion = nn.MSELoss(reduction="none")
         else:
             self.criterion = nn.MSELoss()
+        print('init model')
+        
+        self.pca_matrix = None
+        self.pca_train_mean = 0
 
     def hook_fn(self, module, input, output):
         self.hidden_output = output
@@ -229,32 +251,33 @@ class Custom_model(pl.LightningModule):
             x_ppg, y, group, x_abp, peakmask, vlymask = batch
         else:
             x_ppg, y, x_abp, peakmask, vlymask = batch
-        merged, l2pscore, entropy = self.prompt_learner_glo(x_ppg, mode, group)
-
+        if (self.pca_matrix == None) & (self.step_mode=="val"):
+            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.sanity_pca_matrix, self.sanity_val_mean)
+        else:
+            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.pca_matrix, self.pca_train_mean)
         if self.config.normalize:
             merged = normalizer(x_ppg["ppg"], merged)
         if self.config.clip:
             merged = torch.clamp(merged, min= self.ppg_min,max=self.ppg_max)
-        torch.save(merged, "merged_1.pt")
+        # torch.save(merged, "merged_1.pt")
         pred = self.res_model(merged)
                
         if self.config.group_avg:
             losses = self.criterion(pred, y)
             loss = self.grouping(losses, group)
             if self.config.method == "prompt_global":
-                loss = loss + self.config.score_ratio*l2pscore 
+                loss = loss + self.config.score_ratio*sim_loss 
                 if self.config.penalty:
-                    loss = loss - self.config.lamb*entropy
+                    loss = loss + self.config.penalty_scaler*entropy_penalty
                 return loss, pred, x_abp, y, group
             return loss, pred, x_abp, y, group
 
         else:
             loss = self.criterion(pred, y)
             if self.config.method == "prompt_global":
-                loss = loss + self.config.score_ratio*l2pscore #- entropy
+                loss = loss + self.config.score_ratio*sim_loss #- entropy
                 if self.config.penalty:
-                    loss = loss - self.config.lamb*entropy
-                    return loss, pred, x_abp, y
+                    loss = loss + self.config.penalty_scaler*entropy_penalty
             return loss, pred, x_abp, y
         
     def grouping(self, losses, group):
@@ -274,6 +297,11 @@ class Custom_model(pl.LightningModule):
         return loss
 
     def training_step(self, batch, batch_idx):
+        self.step_mode = 'train'
+        if (self.pca_matrix==None):
+            assert len(batch[0]['ppg']==self.config.param_model.batch_size)
+            self.pca_matrix, self.pca_train_mean = perform_pca(batch[0]['ppg'], n_components=64)
+            print('calculated pca')
         if self.config.group_avg:
             loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode = 'train')
             return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group}  
@@ -293,6 +321,10 @@ class Custom_model(pl.LightningModule):
         self._log_metric(metrics, mode="train")
 
     def validation_step(self, batch, batch_idx):
+        self.step_mode = 'val'
+        if (self.pca_matrix == None):
+            self.sanity_pca_matrix = torch.randn((batch[0]['ppg'].shape[-1], 64)).cuda()
+            self.sanity_val_mean = torch.mean(batch[0]['ppg'], dim=0)
         if self.config.group_avg:
             loss, pred_bp, t_abp, label, group  = self._shared_step(batch, mode='val')
             self.log('val_loss', loss, prog_bar=True, on_epoch=True)
@@ -314,6 +346,7 @@ class Custom_model(pl.LightningModule):
         return val_step_end_out
 
     def test_step(self, batch, batch_idx):
+        self.step_mode = 'test'
         if self.config.group_avg:
             loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode='test')  
             return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group}  

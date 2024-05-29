@@ -48,15 +48,23 @@ def get_parser():
     parser.add_argument("--score_ratio" , type=float, default=1)
     parser.add_argument("--k" , type=int, default=1)
     parser.add_argument("--num_pool" , type=int, default=10)
-    parser.add_argument("--lamb" , type=float, default=0.5)
+    parser.add_argument("--penalty_scaler" , type=float, default=0.1)
     parser.add_argument("--mul" , action='store_true')
     parser.add_argument("--fixed_key" , action='store_true')
     parser.add_argument("--fixed_prompt" , action='store_true')  
     parser.add_argument("--trans" , action='store_true')  
     parser.add_argument("--cnn" , action='store_true')  
     parser.add_argument("--use_group" , action='store_false')  
+    parser.add_argument("--ignore_wandb", action='store_true',
+        help = "Stop using wandb (Default : False)")
+    # -------------------------------------------------------
+    parser.add_argument("--backbone", choices=["resnet1d", "mlpbp", "spectroresnet"], required=True)
+    parser.add_argument("--shots", default=0, type=int, help="Few-shot Regression")
+    parser.add_argument("--transfer", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
+    parser.add_argument("--target", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
     
-    
+    parser.add_argument("--lp", action="store_true")
+    parser.add_argument("--scratch", action="store_true")
     return parser
 
 def parser_to_config(parser, config):
@@ -166,5 +174,25 @@ def main(args):
 
 if __name__ == '__main__':
     parser = get_parser()
+    args = parser.parse_args()
+    src_data = args.transfer
+    tgt_data = args.target
+    group_name = f'{src_data}-{tgt_data}'
+    if args.scratch:
+        group_name = group_name + '-scratch'
+    if args.lp:
+        group_name = group_name + '-linearprobing'
+    if args.method == 'prompt_global':
+        group_name = group_name + f'-prompt_global'
+    
+    if not args.ignore_wandb:
+        import wandb
+        wandb.init(entity='l2p_bp', project='fewshot_transfer', group=group_name)
+        lr = args.lr
+        wd = args.wd
+        run_name = f'seed:{args.seed}-lr:{lr}-wd:{wd}'
+        wandb.run.name = run_name
+        wandb.config.update(args)
+        
     main(parser.parse_args())
 

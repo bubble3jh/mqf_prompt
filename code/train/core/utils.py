@@ -490,14 +490,30 @@ def remove_outlier(list_of_df):
         output_list.append(df_)
     return output_list
 
+# def group_annot(list_of_df):
+#     output_list = []
+#     for df in list_of_df:
+#         df['group'] = 100
+#         df.loc[(140 <= df.SP) | (90 <= df.DP), 'group'] = 3  # Hyper2
+#         df.loc[((120 <= df.SP) & (df.SP <= 140)) | ((80 <= df.DP) & (df.DP <= 90)), 'group'] = 2  # Prehyper
+#         df.loc[((90 <= df.SP) & (df.SP <= 120)) | ((60 <= df.DP) & (df.DP <= 80)), 'group'] = 1  # Normal
+#         df.loc[((80 <= df.SP) & (df.SP <= 90)) | ((40 <= df.DP) & (df.DP <= 60)), 'group'] = 0 # Hypo
+#         value_counts = df['group'].value_counts()
+#         remain = value_counts.get(100, 0)
+
+#         if remain:
+#             assert 1==2, "Annotating Group is Failed"
+#         output_list.append(df)
+#     return output_list
+
 def group_annot(list_of_df):
     output_list = []
     for df in list_of_df:
         df['group'] = 100
-        df.loc[(140 <= df.SP) | (90 <= df.DP), 'group'] = 3  # Hyper2
-        df.loc[((120 <= df.SP) & (df.SP <= 140)) | ((80 <= df.DP) & (df.DP <= 90)), 'group'] = 2  # Prehyper
-        df.loc[((90 <= df.SP) & (df.SP <= 120)) | ((60 <= df.DP) & (df.DP <= 80)), 'group'] = 1  # Normal
-        df.loc[((80 <= df.SP) & (df.SP <= 90)) | ((40 <= df.DP) & (df.DP <= 60)), 'group'] = 0 # Hypo
+        df.loc[((140 <= df.SP) | (90 <= df.DP)) , 'group'] = 3  # Hyper2
+        df.loc[(((120 <= df.SP) & (df.SP <= 140)) | ((80 <= df.DP) & (df.DP <= 90))) & (df.group==100), 'group'] = 2  # Prehyper
+        df.loc[(((90 <= df.SP) & (df.SP <= 120)) | ((60 <= df.DP) & (df.DP <= 80))) & (df.group==100), 'group'] = 1  # Normal
+        df.loc[(((80 <= df.SP) & (df.SP <= 90)) | ((40 <= df.DP) & (df.DP <= 60))) & (df.group==100), 'group'] = 0 # Hypo
         value_counts = df['group'].value_counts()
         remain = value_counts.get(100, 0)
 
@@ -506,5 +522,66 @@ def group_annot(list_of_df):
         output_list.append(df)
     return output_list
 
+def group_shot(df, n=5): # n=5 --> Validation set shots 5
+    list_of_shots = []
+    for g in range(4): # (hypo, normal, pre_hyper, hyper2)
+        #sampled = df[df["group"]==g].sample(n=n, random_state=0) # Fixing the sampled ppg signal
+        group_df = df[df["group"]==g]
+        sampled = group_df.sample(n=n if len(group_df) >= n else len(group_df), replace=False) 
+        list_of_shots.append(sampled)
+    shot_df = pd.concat(list_of_shots)
+    shot_df = shot_df.sample(frac=1) # Shuffle the rows of merged data frame
+    return shot_df
 
+def group_count(list_of_df):
+    xx = [[],[],[],[]]
+    bp_group = ["Hypo", "Normal", "Prehyper", "Hyper2"]
+    for df in list_of_df:
+        for i in range(4):
+            xx[i].append((df['group']==i).sum())
+    print("##"*20)
+    print("Instances per BP Group in Total Dataset")
+    for i, bp in zip(range(len(xx)), bp_group):
+        print(f"{bp}: {np.sum(xx[i])}")
+    print("##"*20)
+    print("Instances per BP Group in Each Fold")
+    dic = dict()
+    for ids,bp in enumerate(bp_group):
+        dic[f"{bp}"] = xx[ids]
+    df_ = pd.DataFrame(dic)
+    df_.index.name = "Fold"
+    print(df_)
+    print("##"*20)
+
+def transferring(config, transfer_config):
+    transfer_config.param_model.wd = config.param_model.wd
+    transfer_config.param_model.lr = config.param_model.lr
+    transfer_config.param_model.batch_size = config.param_model.batch_size
+    transfer_config.exp.random_state = config.exp.random_state
+    return transfer_config
+
+
+########### PCA
+
+def perform_pca(X, n_components=64):
+    X = X.squeeze()
+    X_mean = torch.mean(X, dim=0)
+    X_centered = X - X_mean
+    
+    covariance_matrix = torch.matmul(X_centered.T, X_centered) / (X_centered.shape[0] - 1)
+
+    eigenvalues, eigenvectors = torch.linalg.eigh(covariance_matrix, UPLO='U')
+    
+    idx = torch.argsort(eigenvalues, descending=True)
+    eigenvalues_sorted = eigenvalues[idx]
+    eigenvectors_sorted = eigenvectors[:, idx]
+    
+    principal_components = eigenvectors_sorted[:, :n_components]
+    return principal_components, X_mean
+
+def project_to_pca_plane(new_data, principal_components, mean):
+    new_data = new_data.squeeze()
+    new_data_centered = new_data - mean
+    projected_data = torch.matmul(new_data_centered, principal_components)
+    return projected_data
 
