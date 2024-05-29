@@ -48,12 +48,10 @@ def get_parser():
     parser.add_argument("--score_ratio" , type=float, default=1)
     parser.add_argument("--k" , type=int, default=1)
     parser.add_argument("--num_pool" , type=int, default=10)
-    parser.add_argument("--penalty_scaler" , type=float, default=0.1)
     parser.add_argument("--mul" , action='store_true')
     parser.add_argument("--fixed_key" , action='store_true')
     parser.add_argument("--fixed_prompt" , action='store_true')  
     parser.add_argument("--trans" , action='store_true')  
-    parser.add_argument("--cnn" , action='store_true')  
     parser.add_argument("--use_group" , action='store_false')  
     parser.add_argument("--ignore_wandb", action='store_true',
         help = "Stop using wandb (Default : False)")
@@ -62,6 +60,7 @@ def get_parser():
     parser.add_argument("--shots", default=0, type=int, help="Few-shot Regression")
     parser.add_argument("--transfer", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
     parser.add_argument("--target", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
+    parser.add_argument("--penalty_scaler" , type=float, default=0.1)
     
     parser.add_argument("--lp", action="store_true")
     parser.add_argument("--scratch", action="store_true")

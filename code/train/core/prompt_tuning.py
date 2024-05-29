@@ -247,10 +247,7 @@ class Custom_model(pl.LightningModule):
         self.hidden_output = output
 
     def _shared_step(self, batch, mode):
-        if self.config.group_avg:
-            x_ppg, y, group, x_abp, peakmask, vlymask = batch
-        else:
-            x_ppg, y, x_abp, peakmask, vlymask = batch
+        x_ppg, y, group, x_abp, peakmask, vlymask = batch
         if (self.pca_matrix == None) & (self.step_mode=="val"):
             merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.sanity_pca_matrix, self.sanity_val_mean)
         else:
@@ -278,7 +275,7 @@ class Custom_model(pl.LightningModule):
                 loss = loss + self.config.score_ratio*sim_loss #- entropy
                 if self.config.penalty:
                     loss = loss + self.config.penalty_scaler*entropy_penalty
-            return loss, pred, x_abp, y
+            return loss, pred, x_abp, y, group
         
     def grouping(self, losses, group):
         group_type = torch.arange(0,4).cuda()
@@ -301,23 +298,15 @@ class Custom_model(pl.LightningModule):
         if (self.pca_matrix==None):
             assert len(batch[0]['ppg']==self.config.param_model.batch_size)
             self.pca_matrix, self.pca_train_mean = perform_pca(batch[0]['ppg'], n_components=64)
-            print('calculated pca')
-        if self.config.group_avg:
-            loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode = 'train')
-            return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group}  
-        else:
-            loss, pred_bp, t_abp, label = self._shared_step(batch,  mode = 'train')
-            self.log('train_loss', loss, on_step=True, on_epoch=True, logger=True)
-            return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label}    
+        loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode = 'train')
+        self.log('train_loss', loss, on_step=True, on_epoch=True, logger=True)
+        return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group} 
     
     def training_epoch_end(self, train_step_outputs):
         logit = torch.cat([v["pred_bp"] for v in train_step_outputs], dim=0)
         label = torch.cat([v["true_bp"] for v in train_step_outputs], dim=0)
-        if self.config.group_avg:
-            group = torch.cat([v["group"] for v in train_step_outputs], dim=0)
-            metrics = self._cal_metric(logit.detach(), label.detach(), group)
-        else:
-            metrics = self._cal_metric(logit.detach(), label.detach())
+        group = torch.cat([v["group"] for v in train_step_outputs], dim=0)
+        metrics = self._cal_metric(logit.detach(), label.detach(), group)
         self._log_metric(metrics, mode="train")
 
     def validation_step(self, batch, batch_idx):
@@ -325,45 +314,29 @@ class Custom_model(pl.LightningModule):
         if (self.pca_matrix == None):
             self.sanity_pca_matrix = torch.randn((batch[0]['ppg'].shape[-1], 64)).cuda()
             self.sanity_val_mean = torch.mean(batch[0]['ppg'], dim=0)
-        if self.config.group_avg:
-            loss, pred_bp, t_abp, label, group  = self._shared_step(batch, mode='val')
-            self.log('val_loss', loss, prog_bar=True, on_epoch=True)
-            return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group}  
-        else:
-            loss, pred_bp, t_abp, label = self._shared_step(batch, mode='val')        
-            self.log('val_loss', loss, prog_bar=True, on_epoch=True)
-            return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label}
+        loss, pred_bp, t_abp, label, group  = self._shared_step(batch, mode='val')
+        self.log('val_loss', loss, prog_bar=True, on_epoch=True)
+        return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group}  
 
     def validation_epoch_end(self, val_step_end_out):
         logit = torch.cat([v["pred_bp"] for v in val_step_end_out], dim=0)
         label = torch.cat([v["true_bp"] for v in val_step_end_out], dim=0)
-        if self.config.group_avg:
-            group = torch.cat([v["group"] for v in val_step_end_out], dim=0)
-            metrics = self._cal_metric(logit.detach(), label.detach(), group)
-        else:
-            metrics = self._cal_metric(logit.detach(), label.detach())
+        group = torch.cat([v["group"] for v in val_step_end_out], dim=0)
+        metrics = self._cal_metric(logit.detach(), label.detach(), group)
         self._log_metric(metrics, mode="val")
         return val_step_end_out
 
     def test_step(self, batch, batch_idx):
         self.step_mode = 'test'
-        if self.config.group_avg:
-            loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode='test')  
-            return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group}  
-            self.log('test_loss', loss, prog_bar=True)
-        else:
-            loss, pred_bp, t_abp, label = self._shared_step(batch, mode='test')   
-            self.log('test_loss', loss, prog_bar=True)
-            return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label}
+        loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode='test')  
+        self.log('test_loss', loss, prog_bar=True)
+        return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group}  
 
     def test_epoch_end(self, test_step_end_out):
         logit = torch.cat([v["pred_bp"] for v in test_step_end_out], dim=0)
         label = torch.cat([v["true_bp"] for v in test_step_end_out], dim=0)
-        if self.config.group_avg:
-            group = torch.cat([v["group"] for v in test_step_end_out], dim=0)
-            metrics = self._cal_metric(logit.detach(), label.detach(), group)
-        else:
-            metrics = self._cal_metric(logit.detach(), label.detach())
+        group = torch.cat([v["group"] for v in test_step_end_out], dim=0)
+        metrics = self._cal_metric(logit.detach(), label.detach(), group)
         self._log_metric(metrics, mode="test")
         return test_step_end_out
     
@@ -375,13 +348,10 @@ class Custom_model(pl.LightningModule):
         mae = torch.mean(prev_mae)
         me = torch.mean(prev_me)
         std = torch.std(torch.mean(logit-label, dim=1))
-        if self.config.group_avg:
-            group_mse = self.grouping(prev_mse, group)
-            group_mae = self.grouping(prev_mae, group)
-            group_me = self.grouping(prev_me, group)
-            return {"mse":mse, "mae":mae, "std": std, "me": me, "group_mse":group_mse, "group_mae":group_mae, "group_me":group_me} 
-        else:
-            return {"mse":mse, "mae":mae, "std": std, "me": me} 
+        group_mse = self.grouping(prev_mse, group)
+        group_mae = self.grouping(prev_mae, group)
+        group_me = self.grouping(prev_me, group)
+        return {"mse":mse, "mae":mae, "std": std, "me": me, "group_mse":group_mse, "group_mae":group_mae, "group_me":group_me} 
     
     def _log_metric(self, metrics, mode):
         for k,v in metrics.items():

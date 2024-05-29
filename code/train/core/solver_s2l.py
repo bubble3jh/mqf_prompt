@@ -183,8 +183,8 @@ class SolverS2l(Solver):
         #####################################################
         #####################################################
         all_split_df = remove_outlier(all_split_df)
-        if self.config.group_avg:
-            all_split_df = group_annot(all_split_df)  # TODO: Make Group Annotation in DataFrame
+        # if self.config.group_avg:
+        all_split_df = group_annot(all_split_df)  # TODO: Make Group Annotation in DataFrame
         #####################################################
         #####################################################
         #--- Nested cv
@@ -379,8 +379,8 @@ class SolverS2l(Solver):
         #####################################################
         #####################################################
         all_split_df = remove_outlier(all_split_df)
-        if self.config.group_avg:
-            all_split_df = group_annot(all_split_df)
+        # if self.config.group_avg:
+        all_split_df = group_annot(all_split_df)
         #####################################################
         #####################################################
         #--- Nested cv

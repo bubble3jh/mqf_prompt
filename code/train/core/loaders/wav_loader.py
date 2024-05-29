@@ -156,8 +156,8 @@ class sensorsLoader():
         self._target_data = np.concatenate([all_sbp, all_dbp],axis=1).astype("float32")
 
         #####
-        if self.config.group_avg:
-            self.all_group = self.data_df["group"].values
+        # if self.config.group_avg:
+        self.all_group = self.data_df["group"].values
         #####
 
         self.subjects = list(self.data_df['patient']) 
@@ -170,9 +170,7 @@ class sensorsLoader():
         y = self._target_data[index]
         peakmask, vlymask = get_bp_pk_vly_mask(abp.reshape(-1))
         ######################
-        if self.config.group_avg:
-            group = self.all_group[index]
-            return signal, y, group, abp, peakmask, vlymask
+        # if self.config.group_avg:
+        group = self.all_group[index]
+        return signal, y, group, abp, peakmask, vlymask
         ######################
-        else:
-            return signal, y, abp, peakmask, vlymask
