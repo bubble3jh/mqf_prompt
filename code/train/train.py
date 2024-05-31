@@ -21,11 +21,18 @@ import coloredlogs, logging
 coloredlogs.install()
 logger = logging.getLogger(__name__)  
 
-
 def seed_everything(SEED):
-    torch.cuda.manual_seed(SEED)
-    torch.cuda.manual_seed_all(SEED)
+    np.random.seed(SEED)
+    random.seed(SEED)
     pl.utilities.seed.seed_everything(seed=SEED)
+    os.environ["PYTHONHASHSEED"] = str(SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(SEED)
+        torch.cuda.manual_seed_all(SEED)
+        torch.backends.cudnn.deterministic = True
+        # torch.use_deterministic_algorithms(True)
+        torch.backends.cudnn.benchmark = False
+    torch.manual_seed(SEED)
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -82,7 +89,6 @@ def main(args):
     if os.path.exists(args.config_file) == False:
         raise RuntimeError("config_file {} does not exist".format(args.config_file))
 
-
     time_start = time()
     config = OmegaConf.load(args.config_file)
     result_dir = os.path.join(args.root_dir, f"{args.result_dirname}/{config.exp['model_type']}/{config.exp['data_name']}")
@@ -100,7 +106,6 @@ def main(args):
         result_name = os.path.join(result_dir, f"{args.method}_top_{args.k}_seed{args.seed}_noise.csv")
     if args.trans:
         result_name = os.path.join(result_dir, f"{args.method}_top_{args.k}_seed{args.seed}_trans.csv")
-    
     
     config = parser_to_config(parser, config) # To preserve config file but input the argument
     
@@ -194,4 +199,3 @@ if __name__ == '__main__':
         wandb.config.update(args)
         
     main(parser.parse_args())
-

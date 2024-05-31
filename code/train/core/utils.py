@@ -570,6 +570,7 @@ def perform_pca(X, n_components=64):
     
     covariance_matrix = torch.matmul(X_centered.T, X_centered) / (X_centered.shape[0] - 1)
 
+    torch.backends.cuda.preferred_linalg_library("magma")
     eigenvalues, eigenvectors = torch.linalg.eigh(covariance_matrix, UPLO='U')
     
     idx = torch.argsort(eigenvalues, descending=True)
