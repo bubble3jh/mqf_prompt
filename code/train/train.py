@@ -59,15 +59,17 @@ def get_parser():
     parser.add_argument("--fixed_key" , action='store_true')
     parser.add_argument("--fixed_prompt" , action='store_true')  
     parser.add_argument("--trans" , action='store_true')  
-    parser.add_argument("--use_group" , action='store_false')  
     parser.add_argument("--ignore_wandb", action='store_true',
         help = "Stop using wandb (Default : False)")
     # -------------------------------------------------------
+    parser.add_argument("--use_group" , action='store_true') # set default to FALSE  
     parser.add_argument("--backbone", choices=["resnet1d", "mlpbp", "spectroresnet"], required=True)
     parser.add_argument("--shots", default=0, type=int, help="Few-shot Regression")
     parser.add_argument("--transfer", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
     parser.add_argument("--target", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
+    parser.add_argument("--prompt_weights", default='learnable', type=str, choices=["learnable", "cos_sim"])
     parser.add_argument("--penalty_scaler" , type=float, default=0.1)
+    parser.add_argument("--pca_dim", default=20, type=int)
     
     parser.add_argument("--lp", action="store_true")
     parser.add_argument("--scratch", action="store_true")

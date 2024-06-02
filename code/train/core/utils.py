@@ -563,7 +563,7 @@ def transferring(config, transfer_config):
 
 ########### PCA
 
-def perform_pca(X, n_components=64):
+def perform_pca(X, n_components=20):
     X = X.squeeze()
     X_mean = torch.mean(X, dim=0)
     X_centered = X - X_mean

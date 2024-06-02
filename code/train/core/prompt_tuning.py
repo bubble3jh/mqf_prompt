@@ -72,10 +72,10 @@ class SimpleLinear(nn.Module):
 class PPGEmbeddingGenerator(nn.Module):  
     def __init__(self, use_group, group_embedding_dim=64, num_groups=4):
         super(PPGEmbeddingGenerator, self).__init__()  # Initialize the parent class
-        self.use_group = use_group
-        self.group_embedding_dim = group_embedding_dim
-        self.group_lookup_table = nn.Embedding(num_groups, group_embedding_dim) if num_groups is not None else None
-
+        if use_group:
+            self.use_group = use_group
+            self.group_embedding_dim = group_embedding_dim
+            self.group_lookup_table = nn.Embedding(num_groups, group_embedding_dim) if num_groups is not None else None
         
     # def pca_transform(self, data, num_components=64):
     #     reshaped_data = data.view(data.size(0), -1).cpu().numpy()
@@ -93,16 +93,19 @@ class PPGEmbeddingGenerator(nn.Module):
         transformed_data = ssa.fit_transform(reshaped_data)
         return torch.tensor(transformed_data, dtype=torch.float32, device=data.device)
 
-    def wavelet_transform(self, data, wavelet_name='db1', num_components=64, level=5):
+    def wavelet_transform(self, data, wavelet_name='db1', level=5):
         transformed_data = []
         for batch in data:
             coeffs = pywt.wavedec(batch.cpu().numpy().flatten(), wavelet_name, level=min(level, int(np.log2(batch.numel()))-1))
             flat_coeffs = np.concatenate(coeffs)
-            transformed_data.append(flat_coeffs[:num_components])
+            # transformed_data.append(flat_coeffs[:num_components])
+            transformed_data.append(flat_coeffs)
         transformed_data = np.array(transformed_data)
         return torch.tensor(transformed_data, dtype=torch.float32, device=data.device)
 
-    def fft_transform(self, data, num_components=313):
+    def fft_transform(self, data):
+        num_components = (data.size(2) // 2) + 1 # FFT has symentic matrix
+        
         reshaped_data = data.view(data.size(0), -1).cpu().numpy()
         transformed_data = np.fft.fft(reshaped_data, axis=1)
         return torch.tensor(np.real(transformed_data[:, :num_components]), dtype=torch.float32, device=data.device)
@@ -113,32 +116,19 @@ class PPGEmbeddingGenerator(nn.Module):
         
         device = ppg.device  # Get the device of the input PPG data
         
-        embeddings=[]
         # Generate Group embedding
-        group_emb = self.group_lookup_table(groups.to(device))  # Move groups to the same device as ppg
-        if self.use_group:    
-            embeddings.append(group_emb)
+        # group_emb = self.group_lookup_table(groups.to(device))  # Move groups to the same device as ppg
         
         # Generate PCA embedding
         pca_emb = self.pca_transform(ppg, pca_matrix, pca_mean)
-        embeddings.append(pca_emb)
-        
-        # Generate SSA embedding
-        # ssa_emb = self.ssa_transform(ppg)
-        # embeddings.append(ssa_emb)
         
         # Generate FFT embedding
-        fft_emb = self.fft_transform(ppg, num_components=64)
-        embeddings.append(fft_emb)
+        fft_emb = self.fft_transform(ppg)
         
         # Generate Wavelet embedding
-        wavelet_emb = self.wavelet_transform(ppg, num_components=64)
-        embeddings.append(wavelet_emb)
+        wavelet_emb = self.wavelet_transform(ppg)
 
-        # Move all embeddings to the same device
-        embeddings = [emb.to(device) for emb in embeddings]
-
-        return torch.stack(embeddings, dim=1)
+        return pca_emb, fft_emb, wavelet_emb
     
 class L2Prompt(nn.Module):
     def __init__(self, config, model_config, x_min, x_max):
@@ -153,22 +143,22 @@ class L2Prompt(nn.Module):
         self.top_k = 1 # select top - 1
         self.ppg_embedding_generator = PPGEmbeddingGenerator(config.use_group, self.model_config["emb_dim"])
             
+        # Projection Matrix for feature querys
+        self.pca_proj = nn.Linear(20, model_config["emb_dim"])
+        self.fft_proj = nn.Linear(model_config["data_dim"]//2 + 1, model_config["emb_dim"])
+        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], model_config["emb_dim"])    
+        
         # Initialize learnable parameters for keys and prompts
-        self.keys = nn.Parameter(torch.randn(self.num_pool, 4, self.model_config["emb_dim"]))
+        self.keys = nn.Parameter(torch.randn(self.num_pool, 3 if not config.use_group else 4, self.model_config["emb_dim"]))
         self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
     
-        # if self.config.fixed_key:
-        #     self.keys = torch.randn(self.num_pool,self.model_config["data_dim"]) #(10, 625)
-        #     self.keys = self.keys.cuda()
-        # else:
-        #     self.keys = nn.Parameter(torch.randn(self.num_pool,self.model_config["data_dim"])) #(10, 625)
-        
-        # if self.config.fixed_prompt:
-        #     self.prompt = torch.randn(self.num_pool , self.model_config["data_dim"])
-        #     self.prompt = self.prompt.cuda()
-        # else:    
-        #     self.prompt = nn.Parameter(torch.randn(self.num_pool , self.model_config["data_dim"]))
-        
+        # Initialize learnable weights
+        self.weight_per_feature = False # MAGIC CODE
+        if self.weight_per_feature:
+            self.learnable_weights = nn.Parameter(torch.ones(3 if not config.use_group else 4))
+        else:
+            self.learnable_weights = nn.Parameter(torch.ones(3 if not config.use_group else 4, self.num_pool)) 
+               
     def count_frequencies(self, tensor,k): 
         unique_values, counts = torch.unique(tensor, return_counts=True)
         frequencies = {}
@@ -182,25 +172,43 @@ class L2Prompt(nn.Module):
         bz = x['ppg'].shape[0]
         
         # Generate PPG embeddings
-        queries = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean)
+        pca_emb, fft_emb, wavelet_emb = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean)
+        
+        # Project each feature to 64 dimensions
+        pca_emb = self.pca_proj(pca_emb)
+        fft_emb = self.fft_proj(fft_emb)
+        wavelet_emb = self.wavelet_proj(wavelet_emb)
+        
+        # Concatenate the projected features to form the query
+        queries = torch.stack([pca_emb, fft_emb, wavelet_emb], dim=1)
         
         # Normalize queries and keys for cosine similarity calculation
         norm_queries = F.normalize(queries, p=2, dim=-1)
         norm_keys = F.normalize(self.keys, p=2, dim=-1)
         
         # Compute cosine similarities between queries and their corresponding keys
-        cos_sim = torch.einsum('bqd,nqd->bqn', norm_queries, norm_keys)  # Shape: (batch_size, 4, num_prompts)
+        cos_sim = torch.einsum('bqd,nqd->bqn', norm_queries, norm_keys)  # Shape: (batch_size, 3, num_prompts)
         
         # Find the top-1 key for each query
-        top1_indices = cos_sim.argmax(dim=-1)  # Shape: (batch_size, 4)
+        top1_indices = cos_sim.argmax(dim=-1)  # Shape: (batch_size, 3)
         
         # Gather the corresponding prompts
-        top1_prompts = self.prompts[top1_indices].squeeze(2)  # Shape: (batch_size, 4, prompt_dim)
+        top1_prompts = self.prompts[top1_indices].squeeze(2)  # Shape: (batch_size, 3, prompt_dim)
         
-        # Compute matching scores and apply softmax to get weights
-        matching_scores = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
-        weights = F.softmax(matching_scores, dim=-1)  # Shape: (batch_size, 4)
-        
+        if self.config.prompt_weights == 'cos_sim':
+            # Compute matching scores and apply softmax to get weights
+            matching_scores = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 3)
+            weights = F.softmax(matching_scores, dim=-1)  # Shape: (batch_size, 3)
+        elif self.config.prompt_weights == 'learnable':
+            if self.weight_per_feature:
+                weights = self.learnable_weights.expand([bz, self.learnable_weights.shape[0]])
+            else:
+                # Use learnable weights
+                selected_weights = torch.stack([
+                    self.learnable_weights[i].gather(0, top1_indices[:, i]) for i in range(3)
+                ], dim=1)  # Shape: (batch_size, 3)
+                weights = F.softmax(selected_weights, dim=-1)  # Shape: (batch_size, 3)
+            
         # Compute weighted sum of prompts
         final_prompt = (weights.unsqueeze(-1) * top1_prompts).sum(dim=1, keepdim=True)  # Shape: (batch_size, 1, prompt_dim)
                         
@@ -297,7 +305,7 @@ class Custom_model(pl.LightningModule):
         self.step_mode = 'train'
         if (self.pca_matrix==None):
             assert len(batch[0]['ppg']==self.config.param_model.batch_size)
-            self.pca_matrix, self.pca_train_mean = perform_pca(batch[0]['ppg'], n_components=64)
+            self.pca_matrix, self.pca_train_mean = perform_pca(batch[0]['ppg'], n_components=self.config.pca_dim)
         loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode = 'train')
         self.log('train_loss', loss, on_step=True, on_epoch=True, logger=True)
         return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group} 
@@ -312,7 +320,7 @@ class Custom_model(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         self.step_mode = 'val'
         if (self.pca_matrix == None):
-            self.sanity_pca_matrix = torch.randn((batch[0]['ppg'].shape[-1], 64)).cuda()
+            self.sanity_pca_matrix = torch.randn((batch[0]['ppg'].shape[-1], self.config.pca_dim)).cuda()
             self.sanity_val_mean = torch.mean(batch[0]['ppg'], dim=0)
         loss, pred_bp, t_abp, label, group  = self._shared_step(batch, mode='val')
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
