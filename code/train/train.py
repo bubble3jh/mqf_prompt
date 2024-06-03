@@ -174,7 +174,7 @@ def main(args):
             cv_metrics['name'] += f'_numprompt_{config.seed}'
         
 
-        save_result(cv_metrics, result_name) # Save test result to csv
+        # save_result(cv_metrics, result_name) # Save test result to csv
     time_now = time()
     logger.warning(f"Time Used: {ctime(time_now-time_start)}")
 

@@ -184,12 +184,19 @@ class L2Prompt(nn.Module):
         
         # Generate PPG embeddings
         pca_emb, fft_emb, wavelet_emb = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean)
-        
+
+        if len(pca_emb.shape) == 1:
+            pca_emb = pca_emb.unsqueeze(0)
+        if len(fft_emb.shape) == 1:
+            fft_emb = fft_emb.unsqueeze(0)
+        if len(wavelet_emb.shape) == 1:
+            wavelet_emb = wavelet_emb.unsqueeze(0)
+
         # Project each feature to 64 dimensions
         pca_emb = self.pca_proj(pca_emb)
         fft_emb = self.fft_proj(fft_emb)
         wavelet_emb = self.wavelet_proj(wavelet_emb)
-        
+
         # Concatenate the projected features to form the query
         queries = torch.stack([pca_emb, fft_emb, wavelet_emb], dim=1)
         
