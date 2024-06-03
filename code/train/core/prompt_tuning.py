@@ -9,6 +9,7 @@ from sklearn.decomposition import IncrementalPCA, PCA
 from pyts.decomposition import SingularSpectrumAnalysis
 import pywt
 from core.utils import perform_pca, project_to_pca_plane
+import wandb
 
 def hook_fn(module, input, output):
     global hidden_output
@@ -144,21 +145,31 @@ class L2Prompt(nn.Module):
         self.ppg_embedding_generator = PPGEmbeddingGenerator(config.use_group, self.model_config["emb_dim"])
             
         # Projection Matrix for feature querys
-        self.pca_proj = nn.Linear(20, model_config["emb_dim"])
-        self.fft_proj = nn.Linear(model_config["data_dim"]//2 + 1, model_config["emb_dim"])
-        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], model_config["emb_dim"])    
+        self.pca_proj = nn.Linear(config.pca_dim, model_config["emb_dim"], bias=False)
+        self.fft_proj = nn.Linear(model_config["data_dim"]//2 + 1, model_config["emb_dim"], bias=False)
+        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], model_config["emb_dim"], bias=False)    
         
         # Initialize learnable parameters for keys and prompts
         self.keys = nn.Parameter(torch.randn(self.num_pool, 3 if not config.use_group else 4, self.model_config["emb_dim"]))
         self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
     
         # Initialize learnable weights
-        self.weight_per_feature = False # MAGIC CODE
-        if self.weight_per_feature:
-            self.learnable_weights = nn.Parameter(torch.ones(3 if not config.use_group else 4))
+        self.weight_per_prompt = config.weight_per_prompt
+        if self.weight_per_prompt:
+            self.learnable_weights = nn.Parameter(self._initialize_weights(3 if not config.use_group else 4, self.num_pool))
         else:
-            self.learnable_weights = nn.Parameter(torch.ones(3 if not config.use_group else 4, self.num_pool)) 
-               
+            self.learnable_weights = nn.Parameter(self._initialize_weights(3 if not config.use_group else 4))
+    
+    def _initialize_weights(self, size, num_pool=None):
+        if num_pool:
+            weights = torch.empty((size, num_pool))
+            torch.nn.init.xavier_uniform_(weights)
+        else:
+            weights = torch.empty((size,1))
+            torch.nn.init.xavier_uniform_(weights)
+            weights = weights.squeeze()
+        return weights
+
     def count_frequencies(self, tensor,k): 
         unique_values, counts = torch.unique(tensor, return_counts=True)
         frequencies = {}
@@ -200,8 +211,9 @@ class L2Prompt(nn.Module):
             matching_scores = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 3)
             weights = F.softmax(matching_scores, dim=-1)  # Shape: (batch_size, 3)
         elif self.config.prompt_weights == 'learnable':
-            if self.weight_per_feature:
+            if not self.weight_per_prompt:
                 weights = self.learnable_weights.expand([bz, self.learnable_weights.shape[0]])
+                weights = F.softmax(weights, dim=-1)
             else:
                 # Use learnable weights
                 selected_weights = torch.stack([
@@ -222,7 +234,7 @@ class L2Prompt(nn.Module):
         
         # Calculate pull_constraint loss (similarity loss) using cos_sim
         sim_pull = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
-        sim_loss = -sim_pull.mean()  # Negative to maximize similarity
+        sim_loss = torch.tensor(1)-sim_pull.mean()  # Negative to maximize similarity
                 
         # Calculate entropy penalty to ensure diverse prompt selection
         entropy = -(weights * torch.log(weights + 1e-10)).sum(dim=-1).mean()  # Shape: scalar
@@ -268,10 +280,11 @@ class Custom_model(pl.LightningModule):
         pred = self.res_model(merged)
                
         if self.config.group_avg:
+            raise ValueError("We do not use group loss")
             losses = self.criterion(pred, y)
             loss = self.grouping(losses, group)
             if self.config.method == "prompt_global":
-                loss = loss + self.config.score_ratio*sim_loss 
+                loss = loss + self.config.qk_sim_coeff*sim_loss 
                 if self.config.penalty:
                     loss = loss + self.config.penalty_scaler*entropy_penalty
                 return loss, pred, x_abp, y, group
@@ -279,10 +292,16 @@ class Custom_model(pl.LightningModule):
 
         else:
             loss = self.criterion(pred, y)
+            wandb.log(
+                   {f'{mode}/reg_loss':loss,
+                    f'{mode}/qk_sim_loss':sim_loss,
+                    f'{mode}/penalty_loss':entropy_penalty}
+                    )
             if self.config.method == "prompt_global":
-                loss = loss + self.config.score_ratio*sim_loss #- entropy
+                loss = loss + self.config.qk_sim_coeff*sim_loss #- entropy
                 if self.config.penalty:
                     loss = loss + self.config.penalty_scaler*entropy_penalty
+            
             return loss, pred, x_abp, y, group
         
     def grouping(self, losses, group):

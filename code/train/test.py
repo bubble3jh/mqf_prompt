@@ -6,7 +6,6 @@ from time import time, ctime
 from omegaconf import OmegaConf
 from core.solver_s2s import Solver as solver_s2s
 from core.solver_s2l import SolverS2l as solver_s2l
-import wandb
 import coloredlogs, logging
 coloredlogs.install()
 logger = logging.getLogger(__name__)  

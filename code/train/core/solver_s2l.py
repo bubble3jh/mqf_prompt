@@ -69,10 +69,10 @@ class SolverS2l(Solver):
                         model.param_model.batch_size = self.config.param_model.batch_size
                 else:
                     model = Resnet1d.load_from_checkpoint(f"pretrained_models/{backbone_name}/fold{fold}.ckpt")
-                # Initialize Classifier
-                model.model.main_clf = nn.Linear(in_features=model.model.main_clf.in_features,
-                                                 out_features=model.model.main_clf.out_features,
-                                                 bias=model.model.main_clf.bias is not None)
+                # # Initialize Classifier
+                # model.model.main_clf = nn.Linear(in_features=model.model.main_clf.in_features,
+                #                                  out_features=model.model.main_clf.out_features,
+                #                                  bias=model.model.main_clf.bias is not None)
                 print(f"####### Load {self.config.exp.model_type} backbone model pre-trained by {self.config.transfer} #######")
             else:
                 NotImplementedError

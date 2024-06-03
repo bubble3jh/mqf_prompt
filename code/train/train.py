@@ -52,7 +52,6 @@ def get_parser():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--group_avg", action='store_true')
     parser.add_argument("--penalty", action='store_true')
-    parser.add_argument("--score_ratio" , type=float, default=1)
     parser.add_argument("--k" , type=int, default=1)
     parser.add_argument("--num_pool" , type=int, default=10)
     parser.add_argument("--mul" , action='store_true')
@@ -69,7 +68,9 @@ def get_parser():
     parser.add_argument("--target", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
     parser.add_argument("--prompt_weights", default='learnable', type=str, choices=["learnable", "cos_sim"])
     parser.add_argument("--penalty_scaler" , type=float, default=0.1)
+    parser.add_argument("--qk_sim_coeff", type=float, default=0.5)
     parser.add_argument("--pca_dim", default=20, type=int)
+    parser.add_argument("--weight_per_prompt", action='store_true', help="on=> (3, pool), off => (3) learable weight")
     
     parser.add_argument("--lp", action="store_true")
     parser.add_argument("--scratch", action="store_true")
@@ -147,7 +148,7 @@ def main(args):
         elif config.method == 'prompt_global':
             cv_metrics['name'] = f"lr_{config.lr}_wd_{config.wd}"
             cv_metrics['name'] += f'_k_{config.k}'
-            cv_metrics['name'] += f'_lambda_{config.score_ratio}'
+            cv_metrics['name'] += f'_lambda_{config.qk_sim_coeff}'
             cv_metrics['name'] += f'_num_pool_{config.num_pool}'
             if config.penalty:
                 cv_metrics['name'] += f'_penalty'
