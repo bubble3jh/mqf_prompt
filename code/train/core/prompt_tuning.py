@@ -299,11 +299,12 @@ class Custom_model(pl.LightningModule):
 
         else:
             loss = self.criterion(pred, y)
-            wandb.log(
-                   {f'{mode}/reg_loss':loss,
-                    f'{mode}/qk_sim_loss':sim_loss,
-                    f'{mode}/penalty_loss':entropy_penalty}
-                    )
+            if not self.config.ignore_wandb:
+                wandb.log(
+                    {f'{mode}/reg_loss':loss,
+                        f'{mode}/qk_sim_loss':sim_loss,
+                        f'{mode}/penalty_loss':entropy_penalty}
+                        )
             if self.config.method == "prompt_global":
                 loss = loss + self.config.qk_sim_coeff*sim_loss #- entropy
                 if self.config.penalty:

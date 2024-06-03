@@ -138,7 +138,6 @@ class MyTrainer(pl.Trainer):
                 for k, v in result.items():
                     if (isinstance(v, torch.Tensor)) and (k!='group'):
                         outputs[k].append(v.cpu())
-        #import pdb; pdb.set_trace()
         outputs = {k:torch.vstack(v).detach().float() for k,v in outputs.items()}
 
         return outputs
