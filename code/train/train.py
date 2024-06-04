@@ -132,6 +132,8 @@ def main(args):
     config.param_early_stop.patience=100
     config.exp.N_fold=5
 
+    print(config)
+
     #--- get the solver
     if config.exp.model_type in ['unet1d', 'ppgiabp', 'vnet']:
         solver = solver_s2s(config)
@@ -204,7 +206,7 @@ if __name__ == '__main__':
     
     if not args.ignore_wandb:
         import wandb
-        wandb.init(entity='l2p_bp', project='fewshot_transfer', group=group_name)
+        wandb.init(entity='l2p_bp', project='fewshot_transfer_gumbel', group=group_name)
         lr = args.lr
         wd = args.wd
         run_name = f'seed:{args.seed}-lr:{lr}-wd:{wd}'
