@@ -65,6 +65,8 @@ def get_parser():
     parser.add_argument("--data_root", type=str, default='/bp_benchmark/datasets/ETRI_2023/results')
     # -------------------------------------------------------
     parser.add_argument("--use_group" , action='store_true') # set default to FALSE  
+    parser.add_argument("--train_head" , action='store_true') # train regression head
+    parser.add_argument("--reset_head" , action='store_true') # reset regression head like LP
     parser.add_argument("--backbone", choices=["resnet1d", "mlpbp", "spectroresnet"], required=True)
     parser.add_argument("--shots", default=0, type=int, help="Few-shot Regression")
     parser.add_argument("--transfer", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
