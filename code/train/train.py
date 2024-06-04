@@ -111,7 +111,7 @@ def main(args):
         result_name = os.path.join(result_dir, f"{args.method}_top_{args.k}_seed{args.seed}_trans.csv")
     
     config = parser_to_config(parser, config) # To preserve config file but input the argument
-    
+
     if config.group_avg:
         val_type = "val_group_mse"
         config.objective.type = val_type
@@ -121,6 +121,12 @@ def main(args):
     # import pdb; pdb.set_trace()
     # set seed
     seed_everything(config.seed)
+
+    config.param_trainer.max_epochs=100
+    config.param_trainer.check_val_every_n_epoch=2
+    config.param_model.batch_size=256
+    config.param_early_stop.patience=10
+    config.exp.N_fold=5
 
     #--- get the solver
     if config.exp.model_type in ['unet1d', 'ppgiabp', 'vnet']:
@@ -202,3 +208,5 @@ if __name__ == '__main__':
         wandb.config.update(args)
         
     main(parser.parse_args())
+
+    wandb.finish()

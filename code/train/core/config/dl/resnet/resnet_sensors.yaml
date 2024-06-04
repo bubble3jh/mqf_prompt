@@ -27,7 +27,7 @@ param_trainer:
 param_early_stop:
   monitor: ${objective.type}
   min_delta: 0.0
-  patience: 10
+  patience: 1000
   verbose: true
   mode: ${objective.mode}
 param_model:

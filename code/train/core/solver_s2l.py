@@ -44,7 +44,7 @@ coloredlogs.install()
 logger = logging.getLogger(__name__)  
 
 #%%
-    
+
 class SolverS2l(Solver):
     # def __init__(self, config, transfer):
     #     super(SolverS2l, self).__init__()
@@ -221,7 +221,6 @@ class SolverS2l(Solver):
                 model_config = model_configuration[data_name]
                 data_shape = model_config["data_dim"]
                 model = Custom_model(res_model, data_shape, model_config, self.config, stats)
-                
                 
                 for name, param in model.named_parameters():
                     if 'prompt_learner' not in name:

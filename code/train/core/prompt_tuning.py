@@ -151,7 +151,10 @@ class L2Prompt(nn.Module):
         
         # Initialize learnable parameters for keys and prompts
         self.keys = nn.Parameter(torch.randn(self.num_pool, 3 if not config.use_group else 4, self.model_config["emb_dim"]))
+        nn.init.xavier_uniform_(self.keys)
+
         self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
+        nn.init.xavier_uniform_(self.prompts)
     
         # Initialize learnable weights
         self.weight_per_prompt = config.weight_per_prompt
@@ -200,19 +203,30 @@ class L2Prompt(nn.Module):
         # Concatenate the projected features to form the query
         queries = torch.stack([pca_emb, fft_emb, wavelet_emb], dim=1)
         
-        # Normalize queries and keys for cosine similarity calculation
-        norm_queries = F.normalize(queries, p=2, dim=-1)
-        norm_keys = F.normalize(self.keys, p=2, dim=-1)
+        d_k = queries.size(-1)  # query의 마지막 차원의 크기
         
-        # Compute cosine similarities between queries and their corresponding keys
-        cos_sim = torch.einsum('bqd,nqd->bqn', norm_queries, norm_keys)  # Shape: (batch_size, 3, num_prompts)
+        cos_sim = torch.einsum('bqd,nqd->bqn', queries, self.keys) / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
+        # top1_indices = cos_sim.argmax(dim=-1)  # Shape: (batch_size, 3)
+
+        gumbel_sample = F.gumbel_softmax(cos_sim, tau=1.0, hard=True)
+        # import pdb; pdb.set_trace()
+
+        top1_prompts = torch.einsum('bki,nd->bkd', gumbel_sample, self.prompts.squeeze(1))
+
+        # # Normalize queries and keys for cosine similarity calculation
+        # norm_queries = F.normalize(queries, p=2, dim=-1)
+        # norm_keys = F.normalize(self.keys, p=2, dim=-1)
         
-        # Find the top-1 key for each query
-        top1_indices = cos_sim.argmax(dim=-1)  # Shape: (batch_size, 3)
+        # # Compute cosine similarities between queries and their corresponding keys
+        # cos_sim = torch.einsum('bqd,nqd->bqn', norm_queries, norm_keys)  # Shape: (batch_size, 3, num_prompts)
+        
+        # # Find the top-1 key for each query
+        # top1_indices = cos_sim.argmax(dim=-1)  # Shape: (batch_size, 3)
         
         # Gather the corresponding prompts
-        top1_prompts = self.prompts[top1_indices].squeeze(2)  # Shape: (batch_size, 3, prompt_dim)
-        
+        # top1_prompts = self.prompts[top1_indices].squeeze(2)  # Shape: (batch_size, 3, prompt_dim)
+
+        top1_indices = gumbel_sample.argmax(dim=-1).clone().detach().to(torch.int64)
         if self.config.prompt_weights == 'cos_sim':
             # Compute matching scores and apply softmax to get weights
             matching_scores = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 3)
@@ -227,22 +241,27 @@ class L2Prompt(nn.Module):
                     self.learnable_weights[i].gather(0, top1_indices[:, i]) for i in range(3)
                 ], dim=1)  # Shape: (batch_size, 3)
                 weights = F.softmax(selected_weights, dim=-1)  # Shape: (batch_size, 3)
-            
+        
         # Compute weighted sum of prompts
         final_prompt = (weights.unsqueeze(-1) * top1_prompts).sum(dim=1, keepdim=True)  # Shape: (batch_size, 1, prompt_dim)
-                        
+                
         if self.config.glonorm:
             final_prompt = global_normalizer(final_prompt, self.x_min, self.x_max)
         
         if self.config.mul:
             prompted_signal = x['ppg']*self.config.global_coeff*final_prompt
-        else:    
+        else:
             prompted_signal = x['ppg'] + self.config.global_coeff*final_prompt
         
         # Calculate pull_constraint loss (similarity loss) using cos_sim
-        sim_pull = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
+        # import pdb; pdb.set_trace()
+        # sim_pull = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
+        sim_pull = cos_sim.gather(-1, top1_indices).squeeze(-1)
         sim_loss = torch.tensor(1)-sim_pull.mean()  # Negative to maximize similarity
-                
+
+        top_prompt_idx = top1_indices.detach().cpu().numpy()
+        wandb.log({"top_prompt_idx": wandb.Table(data=top_prompt_idx, columns=["PCA", "FFT", "Wave"])})
+
         # Calculate entropy penalty to ensure diverse prompt selection
         entropy = -(weights * torch.log(weights + 1e-10)).sum(dim=-1).mean()  # Shape: scalar
         entropy_penalty = -entropy  # Negative to minimize entropy
@@ -302,7 +321,8 @@ class Custom_model(pl.LightningModule):
             wandb.log(
                    {f'{mode}/reg_loss':loss,
                     f'{mode}/qk_sim_loss':sim_loss,
-                    f'{mode}/penalty_loss':entropy_penalty}
+                    f'{mode}/penalty_loss':entropy_penalty,
+                    'epoch': self.current_epoch}
                     )
             if self.config.method == "prompt_global":
                 loss = loss + self.config.qk_sim_coeff*sim_loss #- entropy
