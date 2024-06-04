@@ -586,3 +586,49 @@ def project_to_pca_plane(new_data, principal_components, mean):
     projected_data = torch.matmul(new_data_centered, principal_components)
     return projected_data
 
+
+def extract_pca_statistics(data, labels, groups, pca, boundary=2, group_labels=[0, 1, 2, 3], device='cuda'):
+    """
+    주어진 데이터셋의 PCA 변환 버전에서 그룹별 평균과 분산을 추출합니다.
+    """
+    all_data = data
+    pca.fit(all_data.cpu().numpy())
+    all_data = pca.transform(all_data.cpu().numpy())
+    all_data = torch.tensor(all_data).to(device)
+    
+    all_groups = groups
+    grouped_data = get_grouped_data(all_data, all_groups, group_labels)
+
+    statistics = {}
+    for group_label in group_labels:
+        statistics[group_label] = get_statistics(grouped_data[group_label], boundary)
+
+    return statistics
+
+def filter_dataset_based_on_statistics(data, labels, groups, statistics, pca=None, group_labels=[0, 1, 2, 3], is_pca=False, device='cuda'):
+    """
+    주어진 데이터셋을 주어진 통계치를 기준으로 필터링합니다.
+    """
+    all_data = data.unsqueeze(1).to(device)
+    real_data = all_data
+    all_groups = groups.to(device)
+
+    if is_pca:
+        print('pca transformed')
+        
+        all_data = pca.fit_transform(all_data.squeeze().cpu().numpy())
+        all_data = torch.tensor(all_data).to(device)
+    else:
+        print('raw data')
+    
+    grouped_data = get_grouped_data(all_data, all_groups, group_labels)
+
+    filtered_data = {}
+    for group_label in group_labels:
+        mean, var, lower_bound, upper_bound = statistics[group_label]
+        current_data = grouped_data[group_label]
+        filtered_data[group_label], mask = filter_data(current_data, lower_bound, upper_bound, real_data=real_data)
+        print(f"Group {group_label}: {current_data.size(0)} to {filtered_data[group_label].size(0)}")
+        if not mask.shape[0] == 0:
+            labels = labels[mask]
+    return filtered_data, labels

@@ -60,6 +60,9 @@ def get_parser():
     parser.add_argument("--trans" , action='store_true')  
     parser.add_argument("--ignore_wandb", action='store_true',
         help = "Stop using wandb (Default : False)")
+    # yt --------
+    parser.add_argument("--count_group", action="store_true", help="Output Counts of group in each fold") # yt
+    parser.add_argument("--data_root", type=str, default='/bp_benchmark/datasets/ETRI_2023/results')
     # -------------------------------------------------------
     parser.add_argument("--use_group" , action='store_true') # set default to FALSE  
     parser.add_argument("--backbone", choices=["resnet1d", "mlpbp", "spectroresnet"], required=True)
