@@ -73,6 +73,7 @@ def get_parser():
     parser.add_argument("--penalty_scaler" , type=float, default=0.1)
     parser.add_argument("--qk_sim_coeff", type=float, default=0.5)
     parser.add_argument("--pca_dim", default=20, type=int)
+    parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--weight_per_prompt", action='store_true', help="on=> (3, pool), off => (3) learable weight")
     
     parser.add_argument("--lp", action="store_true")
@@ -114,7 +115,7 @@ def main(args):
         result_name = os.path.join(result_dir, f"{args.method}_top_{args.k}_seed{args.seed}_trans.csv")
     
     config = parser_to_config(parser, config) # To preserve config file but input the argument
-    
+
     if config.group_avg:
         val_type = "val_group_mse"
         config.objective.type = val_type
@@ -124,6 +125,12 @@ def main(args):
     # import pdb; pdb.set_trace()
     # set seed
     seed_everything(config.seed)
+
+    config.param_trainer.max_epochs=300
+    config.param_trainer.check_val_every_n_epoch=2
+    config.param_model.batch_size=args.batch_size
+    config.param_early_stop.patience=100
+    config.exp.N_fold=5
 
     #--- get the solver
     if config.exp.model_type in ['unet1d', 'ppgiabp', 'vnet']:
@@ -205,3 +212,5 @@ if __name__ == '__main__':
         wandb.config.update(args)
         
     main(parser.parse_args())
+
+    wandb.finish()

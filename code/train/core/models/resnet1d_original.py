@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from .base_pl import Regressor
 from .resnet import MyConv1dPadSame, MyMaxPool1dPadSame, BasicBlock
 import coloredlogs, logging
-
+import wandb
 coloredlogs.install()
 logger = logging.getLogger(__name__)
 
@@ -19,14 +19,18 @@ class Resnet1d_original(Regressor):
                               param_model.stride, param_model.groups, param_model.n_block,
                               param_model.output_size, param_model.is_se, param_model.se_ch_low)
 
-    def _shared_step(self, batch):
+    def _shared_step(self, batch, mode):
         x_ppg, y, group, x_abp, peakmask, vlymask = batch
         pred = self.model(x_ppg)
         loss = self.criterion(pred, y)
+        if not self.config.ignore_wandb:
+            wandb.log(
+                {f'{mode}/reg_loss':loss}
+                    )
         return loss, pred, x_abp, y
 
     def training_step(self, batch, batch_idx):
-        loss, pred_bp, t_abp, label = self._shared_step(batch)
+        loss, pred_bp, t_abp, label = self._shared_step(batch, 'train')
         self.log('train_loss', loss, on_step=True, on_epoch=True, logger=True)
         return {"loss": loss, "pred_bp": pred_bp, "true_abp": t_abp, "true_bp": label}
 
@@ -37,7 +41,7 @@ class Resnet1d_original(Regressor):
         self._log_metric(metrics, mode="train")
 
     def validation_step(self, batch, batch_idx):
-        loss, pred_bp, t_abp, label = self._shared_step(batch)
+        loss, pred_bp, t_abp, label = self._shared_step(batch, 'val')
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
         return {"loss": loss, "pred_bp": pred_bp, "true_abp": t_abp, "true_bp": label}
 
@@ -49,7 +53,7 @@ class Resnet1d_original(Regressor):
         return val_step_end_out
 
     def test_step(self, batch, batch_idx):
-        loss, pred_bp, t_abp, label = self._shared_step(batch)
+        loss, pred_bp, t_abp, label = self._shared_step(batch, 'test')
         self.log('test_loss', loss, prog_bar=True)
         return {"loss": loss, "pred_bp": pred_bp, "true_abp": t_abp, "true_bp": label}
 

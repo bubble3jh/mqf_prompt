@@ -44,7 +44,7 @@ coloredlogs.install()
 logger = logging.getLogger(__name__)  
 
 #%%
-    
+
 class SolverS2l(Solver):
     # def __init__(self, config, transfer):
     #     super(SolverS2l, self).__init__()
@@ -221,8 +221,7 @@ class SolverS2l(Solver):
                     res_model = self._get_model(ck_path)
                 model_config = model_configuration[data_name]
                 data_shape = model_config["data_dim"]
-                model = Custom_model(res_model, data_shape, model_config, self.config, stats)
-                
+                model = Custom_model(res_model, data_shape, model_config, self.config, stats, foldIdx)
                 
                 for name, param in model.named_parameters():
                     if 'prompt_learner' not in name:
@@ -416,7 +415,7 @@ class SolverS2l(Solver):
                     regressor = self._get_model(ckpt_path_abs) # Load Model # TODO
                 model_config = model_configuration[self.config.backbone][data_name] # Load pre-trained model config
                 data_shape = model_config["data_dim"] 
-                model = Custom_model(regressor, data_shape, model_config, self.config, stats)
+                model = Custom_model(regressor, data_shape, model_config, self.config, stats, foldIdx)
                 #model = Custom_model.load_from_checkpoint(ckpt_path_abs) # Call Prompt Model 
                 #import pdb; pdb.set_trace()
                 model.load_state_dict(torch.load(ckpt_path_abs)["state_dict"])
