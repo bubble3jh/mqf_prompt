@@ -126,11 +126,13 @@ def main(args):
     # set seed
     seed_everything(config.seed)
 
-    config.param_trainer.max_epochs=300
+    config.param_trainer.max_epochs=10
     config.param_trainer.check_val_every_n_epoch=2
     config.param_model.batch_size=args.batch_size
     config.param_early_stop.patience=100
     config.exp.N_fold=5
+
+    print(config)
 
     #--- get the solver
     if config.exp.model_type in ['unet1d', 'ppgiabp', 'vnet']:
@@ -204,7 +206,7 @@ if __name__ == '__main__':
     
     if not args.ignore_wandb:
         import wandb
-        wandb.init(entity='l2p_bp', project='fewshot_transfer', group=group_name)
+        wandb.init(entity='l2p_bp', project='fewshot_transfer_gumbel', group=group_name)
         lr = args.lr
         wd = args.wd
         run_name = f'seed:{args.seed}-lr:{lr}-wd:{wd}'
