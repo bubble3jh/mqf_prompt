@@ -148,15 +148,15 @@ class L2Prompt(nn.Module):
         self.num_pool = config.num_pool
         self.penalty = config.penalty
         self.top_k = 1 # select top - 1
-        self.ppg_embedding_generator = PPGEmbeddingGenerator(config.use_group, self.model_config["emb_dim"])
+        self.ppg_embedding_generator = PPGEmbeddingGenerator(config.use_group, self.config.query_dim)
             
         # Projection Matrix for feature querys
-        self.pca_proj = nn.Linear(config.pca_dim, model_config["emb_dim"], bias=False)
-        self.fft_proj = nn.Linear(model_config["data_dim"]//2 + 1, model_config["emb_dim"], bias=False)
-        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], model_config["emb_dim"], bias=False)    
+        self.pca_proj = nn.Linear(config.pca_dim, config.query_dim, bias=False)
+        self.fft_proj = nn.Linear(model_config["data_dim"]//2 + 1, config.query_dim, bias=False)
+        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], config.query_dim, bias=False)    
         
         # Initialize learnable parameters for keys and prompts
-        self.keys = nn.Parameter(torch.randn(self.num_pool, 3 if not config.use_group else 4, self.model_config["emb_dim"]))
+        self.keys = nn.Parameter(torch.randn(self.num_pool, 3 if not config.use_group else 4, self.config.query_dim))
         nn.init.xavier_uniform_(self.keys)
 
         self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
@@ -292,11 +292,10 @@ class Custom_model(pl.LightningModule):
         else:
             merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.pca_matrix, self.pca_train_mean)
         if self.config.normalize:
-            # merged = normalizer(x_ppg["ppg"], merged)
-            merged = loc_z(merged, self.config)
+            merged = normalizer(x_ppg["ppg"], merged)
         if self.config.clip:
             merged = torch.clamp(merged, min= self.ppg_min,max=self.ppg_max)
-        import pdb;pdb.set_trace()
+        
         # torch.save(merged, "merged_1.pt")
         pred = self.res_model(merged)
                
