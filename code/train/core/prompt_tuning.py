@@ -8,19 +8,25 @@ import numpy as np
 from sklearn.decomposition import IncrementalPCA, PCA
 from pyts.decomposition import SingularSpectrumAnalysis
 import pywt
-from core.utils import perform_pca, project_to_pca_plane
+from core.utils import perform_pca, project_to_pca_plane, loc_z
 import wandb
 
 def hook_fn(module, input, output):
     global hidden_output
     hidden_output = output
 
+# def normalizer(x, x_prompted):
+#     x_max = x.max(dim=-1, keepdim=True)[0]; x_min = x.min(dim=-1, keepdim=True)[0] # 256, 1, 1
+#     x_prompted_max = x_prompted.max(dim=-1, keepdim=True)[0]; x_prompted_min = x_prompted.min(dim=-1, keepdim=True)[0]
+#     scale = (x_max - x_min) / (x_prompted_max - x_prompted_min)
+#     kk = scale*(x_prompted - x_prompted_min) + x_min
+#     return kk
+
 def normalizer(x, x_prompted):
-    x_max = x.max(dim=-1, keepdim=True)[0]; x_min = x.min(dim=-1, keepdim=True)[0] # 256, 1, 1
-    x_prompted_max = x_prompted.max(dim=-1, keepdim=True)[0]; x_prompted_min = x_prompted.min(dim=-1, keepdim=True)[0]
-    scale = (x_max - x_min) / (x_prompted_max - x_prompted_min)
-    kk = scale*(x_prompted - x_prompted_min) + x_min
-    return kk
+    x_mean = x.mean(dim=-1, keepdim=True)  
+    x_std = x.std(dim=-1, keepdim=True) + 1e-6  
+    normalized_x_prompted = (x_prompted - x_mean) / x_std
+    return normalized_x_prompted
 
 def normalize_keys(keys):
     # Min-Max Scaling을 사용한 정규화
@@ -142,15 +148,15 @@ class L2Prompt(nn.Module):
         self.num_pool = config.num_pool
         self.penalty = config.penalty
         self.top_k = 1 # select top - 1
-        self.ppg_embedding_generator = PPGEmbeddingGenerator(config.use_group, self.model_config["emb_dim"])
+        self.ppg_embedding_generator = PPGEmbeddingGenerator(config.use_group, self.config.query_dim)
             
         # Projection Matrix for feature querys
-        self.pca_proj = nn.Linear(config.pca_dim, model_config["emb_dim"], bias=False)
-        self.fft_proj = nn.Linear(model_config["data_dim"]//2 + 1, model_config["emb_dim"], bias=False)
-        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], model_config["emb_dim"], bias=False)    
+        self.pca_proj = nn.Linear(config.pca_dim, config.query_dim, bias=False)
+        self.fft_proj = nn.Linear(model_config["data_dim"]//2 + 1, config.query_dim, bias=False)
+        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], config.query_dim, bias=False)    
         
         # Initialize learnable parameters for keys and prompts
-        self.keys = nn.Parameter(torch.randn(self.num_pool, 3 if not config.use_group else 4, self.model_config["emb_dim"]))
+        self.keys = nn.Parameter(torch.randn(self.num_pool, 3 if not config.use_group else 4, self.config.query_dim))
         nn.init.xavier_uniform_(self.keys)
 
         self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
@@ -289,6 +295,7 @@ class Custom_model(pl.LightningModule):
             merged = normalizer(x_ppg["ppg"], merged)
         if self.config.clip:
             merged = torch.clamp(merged, min= self.ppg_min,max=self.ppg_max)
+        
         # torch.save(merged, "merged_1.pt")
         pred = self.res_model(merged)
                

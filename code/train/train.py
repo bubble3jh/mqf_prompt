@@ -75,6 +75,7 @@ def get_parser():
     parser.add_argument("--penalty_scaler" , type=float, default=0.1)
     parser.add_argument("--qk_sim_coeff", type=float, default=0.5)
     parser.add_argument("--pca_dim", default=20, type=int)
+    parser.add_argument("--query_dim", default=32, type=int)
     parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--weight_per_prompt", action='store_true', help="on=> (3, pool), off => (3) learable weight")
     
@@ -217,4 +218,5 @@ if __name__ == '__main__':
         
     main(parser.parse_args())
 
-    wandb.finish()
+    if not args.ignore_wandb:
+        wandb.finish()
