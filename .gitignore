@@ -3,7 +3,12 @@ code/train/model-resnet1d
 code/train/model-resnet1d_
 code/train/model-spectroresnet
 code/train/mlruns
+code/train/lightning_logs
+code/train/wandb
 results/
 real_results/
 real_model
 *.pt
+*.pyc
+*.log
+__pycache__/
