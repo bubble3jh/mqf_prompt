@@ -9,3 +9,6 @@ results/
 real_results/
 real_model
 *.pt
+code/train/core/loaders/__pycache__
+code/train/core/__pycache__
+code/train/core/models/__pycache__
