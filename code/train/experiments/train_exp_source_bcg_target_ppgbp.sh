@@ -74,7 +74,7 @@ $WPP \
 --qk_sim_coeff $QK \
 --pca_dim $PCADIM \
 --prompt_weights $PW \
---penalty_scaler $PS > $LOG_FILE 2>&1 &
+--penalty_scaler $PS > $LOG_FILE 2>&1
 
 # Check if the script ran successfully
 if [ $? -eq 0 ]; then

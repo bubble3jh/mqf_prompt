@@ -9,6 +9,3 @@ results/
 real_results/
 real_model
 *.pt
-*.pyc
-*.log
-__pycache__/

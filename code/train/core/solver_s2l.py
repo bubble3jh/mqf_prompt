@@ -70,7 +70,7 @@ class SolverS2l(Solver):
                 else:
                     model = Resnet1d.load_from_checkpoint(f"pretrained_models/{backbone_name}/fold{fold}.ckpt")
                 # Initialize Classifier
-                if self.config.lp:
+                if self.config.lp or self.config.reset_head:
                     model.model.main_clf = nn.Linear(in_features=model.model.main_clf.in_features,
                                                     out_features=model.model.main_clf.out_features,
                                                     bias=model.model.main_clf.bias is not None)
@@ -224,7 +224,10 @@ class SolverS2l(Solver):
                 model = Custom_model(res_model, data_shape, model_config, self.config, stats, foldIdx)
                 
                 for name, param in model.named_parameters():
-                    if 'prompt_learner' not in name:
+                    train_list = ['prompt_learner', 'main_clf'] if self.config.train_head else ['prompt_learner']
+                    if any(train_param in name for train_param in train_list):
+                        param.requires_grad_(True)
+                    else:
                         param.requires_grad_(False)
 
                 enabled = set()
@@ -261,6 +264,7 @@ class SolverS2l(Solver):
                 
                 # train
                 trainer.fit(model, dm)
+                
                 print("run_id", run.info.run_id)
                 artifact_uri, ckpt_path = get_ckpt(mf.get_run(run_id=run.info.run_id))
 
