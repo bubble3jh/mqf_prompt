@@ -15,12 +15,18 @@ def hook_fn(module, input, output):
     global hidden_output
     hidden_output = output
 
+# def normalizer(x, x_prompted):
+#     x_max = x.max(dim=-1, keepdim=True)[0]; x_min = x.min(dim=-1, keepdim=True)[0] # 256, 1, 1
+#     x_prompted_max = x_prompted.max(dim=-1, keepdim=True)[0]; x_prompted_min = x_prompted.min(dim=-1, keepdim=True)[0]
+#     scale = (x_max - x_min) / (x_prompted_max - x_prompted_min)
+#     kk = scale*(x_prompted - x_prompted_min) + x_min
+#     return kk
+
 def normalizer(x, x_prompted):
-    x_max = x.max(dim=-1, keepdim=True)[0]; x_min = x.min(dim=-1, keepdim=True)[0] # 256, 1, 1
-    x_prompted_max = x_prompted.max(dim=-1, keepdim=True)[0]; x_prompted_min = x_prompted.min(dim=-1, keepdim=True)[0]
-    scale = (x_max - x_min) / (x_prompted_max - x_prompted_min)
-    kk = scale*(x_prompted - x_prompted_min) + x_min
-    return kk
+    x_mean = x.mean(dim=-1, keepdim=True)  
+    x_std = x.std(dim=-1, keepdim=True) + 1e-6  
+    normalized_x_prompted = (x_prompted - x_mean) / x_std
+    return normalized_x_prompted
 
 def normalize_keys(keys):
     # Min-Max Scaling을 사용한 정규화
