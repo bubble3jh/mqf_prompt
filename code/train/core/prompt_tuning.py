@@ -157,10 +157,10 @@ class L2Prompt(nn.Module):
         
         # Initialize learnable parameters for keys and prompts
         self.keys = nn.Parameter(torch.randn(self.num_pool, 3 if not config.use_group else 4, self.config.query_dim))
-        nn.init.uniform_(self.keys,-1,1)
+        nn.init.xavier_uniform_(self.keys)
 
         self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
-        nn.init.uniform_(self.prompts,-1,1)
+        nn.init.xavier_uniform_(self.prompts)
     
         # Initialize learnable weights
         self.weight_per_prompt = config.weight_per_prompt
@@ -168,9 +168,6 @@ class L2Prompt(nn.Module):
             self.learnable_weights = nn.Parameter(self._initialize_weights(3 if not config.use_group else 4, self.num_pool))
         else:
             self.learnable_weights = nn.Parameter(self._initialize_weights(3 if not config.use_group else 4))
-        
-        if self.config.prompt_weights == 'attention':
-            self.attention = torch.nn.MultiheadAttention(embed_dim=self.model_config["data_dim"], num_heads=2)
     
     def _initialize_weights(self, size, num_pool=None):
         if num_pool:
@@ -236,12 +233,7 @@ class L2Prompt(nn.Module):
                     self.learnable_weights[i].gather(0, top1_indices[:, i]) for i in range(3)
                 ], dim=1)  # Shape: (batch_size, 3)
                 weights = F.softmax(weights, dim=-1)  # Shape: (batch_size, 3)
-        elif self.config.prompt_weights == 'attention':
-            # Use attention to merge original signal and top1_prompts
-            # import pdb; pdb.set_trace()
-            weights = torch.einsum('bcd,bkd->bk', x['ppg'], top1_prompts)
-            weights = F.softmax(weights, dim=-1)
-
+        
         # Compute weighted sum of prompts
         final_prompt = (weights.unsqueeze(-1) * top1_prompts).sum(dim=1, keepdim=True)  # Shape: (batch_size, 1, prompt_dim)
                 
@@ -254,24 +246,18 @@ class L2Prompt(nn.Module):
             prompted_signal = x['ppg'] + self.config.global_coeff*final_prompt
         
         # Calculate pull_constraint loss (similarity loss) using cos_sim
-        # sim_pull = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
+        sim_pull = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
         # sim_pull = cos_sim.gather(-1, top1_indices).squeeze(-1)
-        # sim_loss = torch.clamp(1 - sim_pull.mean(), min=0)
-        sim_loss = 0
+        sim_loss = torch.clamp(1 - sim_pull.mean(), min=0)
           # Negative to maximize similarity
 
         # top_prompt_idx = top1_indices.detach().cpu().numpy()
         # wandb.log({"top_prompt_idx": wandb.Table(data=top_prompt_idx, columns=["PCA", "FFT", "Wave"])})
 
         # Calculate entropy penalty to ensure diverse prompt selection
-        # entropy = -(weights * torch.log(weights + 1e-10)).sum(dim=-1).mean()  # Shape: scalar
-        # entropy_penalty = -entropy  # Negative to minimize entropy
-        entropy_penalty = 0
+        entropy = -(weights * torch.log(weights + 1e-10)).sum(dim=-1).mean()  # Shape: scalar
+        entropy_penalty = -entropy  # Negative to minimize entropy
         
-        if self.prompts.grad is not None:
-            wandb.log({f'Propmts/gradient': wandb.Histogram(self.prompts.grad.cpu().numpy())})
-            wandb.log({f'key/gradient': wandb.Histogram(self.keys.grad.cpu().numpy())})
-
         return prompted_signal, sim_loss, entropy_penalty
     
 class Custom_model(pl.LightningModule):

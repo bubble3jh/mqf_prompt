@@ -71,7 +71,7 @@ def get_parser():
     parser.add_argument("--shots", default=0, type=int, help="Few-shot Regression")
     parser.add_argument("--transfer", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
     parser.add_argument("--target", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
-    parser.add_argument("--prompt_weights", default='learnable', type=str, choices=["learnable", "cos_sim", "attention"])
+    parser.add_argument("--prompt_weights", default='learnable', type=str, choices=["learnable", "cos_sim"])
     parser.add_argument("--penalty_scaler" , type=float, default=0.1)
     parser.add_argument("--qk_sim_coeff", type=float, default=0.5)
     parser.add_argument("--pca_dim", default=20, type=int)
