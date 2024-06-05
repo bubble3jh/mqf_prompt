@@ -209,7 +209,7 @@ if __name__ == '__main__':
     
     if not args.ignore_wandb:
         import wandb
-        wandb.init(entity='l2p_bp', project='fewshot_transfer_gumbel', group=group_name)
+        wandb.init(entity='l2p_bp', project='fewshot_transfer_uniform', group=group_name)
         lr = args.lr
         wd = args.wd
         run_name = f'seed:{args.seed}-lr:{lr}-wd:{wd}'

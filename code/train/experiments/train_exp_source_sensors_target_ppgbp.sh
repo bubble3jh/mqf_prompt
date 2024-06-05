@@ -1,6 +1,6 @@
 #!/bin/bash
 cd ..
-GPU_IDS=(2 3 4 5 6 7)  # 사용할 GPU ID 리스트
+GPU_IDS=(0 1 2 3 4 5 6 7)  # 사용할 GPU ID 리스트
 IDX=0
 
 TRAINING_SCRIPT="train.py"
