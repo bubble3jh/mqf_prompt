@@ -129,7 +129,7 @@ def main(args):
     # set seed
     seed_everything(config.seed)
 
-    config.param_trainer.max_epochs=100
+    config.param_trainer.max_epochs=10
     config.param_trainer.check_val_every_n_epoch=2
     config.param_model.batch_size=args.batch_size
     config.param_early_stop.patience=100
@@ -218,4 +218,5 @@ if __name__ == '__main__':
         
     main(parser.parse_args())
 
-    wandb.finish()
+    if not args.ignore_wandb:
+        wandb.finish()
