@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.decomposition import IncrementalPCA, PCA
 from pyts.decomposition import SingularSpectrumAnalysis
 import pywt
-from core.utils import perform_pca, project_to_pca_plane
+from core.utils import perform_pca, project_to_pca_plane, loc_z
 import wandb
 
 def hook_fn(module, input, output):
@@ -286,9 +286,11 @@ class Custom_model(pl.LightningModule):
         else:
             merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.pca_matrix, self.pca_train_mean)
         if self.config.normalize:
-            merged = normalizer(x_ppg["ppg"], merged)
+            # merged = normalizer(x_ppg["ppg"], merged)
+            merged = loc_z(merged, self.config)
         if self.config.clip:
             merged = torch.clamp(merged, min= self.ppg_min,max=self.ppg_max)
+        import pdb;pdb.set_trace()
         # torch.save(merged, "merged_1.pt")
         pred = self.res_model(merged)
                
