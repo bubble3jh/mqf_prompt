@@ -19,18 +19,18 @@ GLONORM_OPTIONS=("")
 PENALTY_SCALE_RANGE=(0)
 WEIGHT_PER_PROMPT_OPTIONS=("")
 SCALING_OPTIONS=('--normalize')
-POOL_RANGE=(10)
 QK_SIM_COEFF_RANGE=(0)
 PCA_DIM_RANGE=(20)
 
 # Search range
-LR_RANGE=(1e-2 1e-3 1e-4)
-WD_RANGE=(1e-1 1e-2 1e-3)
-PROMPT_WEIGHTS_OPTIONS=('learnable' 'attention')
+POOL_RANGE=(4 10 20)
+LR_RANGE=(1e-2 1e-3) # 1e-4)
+WD_RANGE=(1e-2 1e-3) #(1e-1 
+PROMPT_WEIGHTS_OPTIONS=('attention')
 BATCHSIZE_RANGE=(20 4)
-QUERY_DIM_RANGE=(32 128)
-HEAD_OPTIONS=("" '--train_head' '--train_head --reset_head')
-GLOBAL_COEFF_RANGE=(3 0.3)
+QUERY_DIM_RANGE=(4 8 16)
+HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
+GLOBAL_COEFF_RANGE=(1 0.1)
 
 for LR in "${LR_RANGE[@]}"
 do
