@@ -22,7 +22,6 @@ WD_RANGE=(1e-1 1e-2 1e-3)
 PENALTY_SCALE_RANGE=(0)
 GLONORM_OPTIONS=("")
 WEIGHT_PER_PROMPT_OPTIONS=("")
-<<<<<<< HEAD
 SCALING_OPTIONS=('--normalize')
 QK_SIM_COEFF_RANGE=(0)
 PCA_DIM_RANGE=(20)
@@ -36,14 +35,6 @@ BATCHSIZE_RANGE=(4)
 QUERY_DIM_RANGE=(4)
 HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
 GLOBAL_COEFF_RANGE=(0.1 1)
-=======
-PROMPT_WEIGHTS_OPTIONS=('learnable' 'cos_sim')
-SCALING_OPTIONS=('--clip' '--normalize')
-GLOBAL_COEFF_RANGE=(0.3 1)
-QK_SIM_COEFF_RANGE=(0)
-PCA_DIM_RANGE=(20 4)
-BATCHSIZE_RANGE=(20 4)
->>>>>>> c11ed76ec07c267c0e8b7fbc2db3f8de3ae92b4b
 
 for LR in "${LR_RANGE[@]}"
 do
