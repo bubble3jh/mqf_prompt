@@ -1,11 +1,9 @@
 #!/bin/bash
 cd ..
-GPU_IDS=(2 3 4 5 6 7)  # 사용할 GPU ID 리스트
+GPU_IDS=(0 1 2 3 4 5 6 7)  # 사용할 GPU ID 리스트
 IDX=0
 
 TRAINING_SCRIPT="train.py"
-LOG_DIR="./experiments/logs"
-mkdir -p $LOG_DIR
 
 # Define the fixed parameters
 TRANSFER="ppgbp"
@@ -28,6 +26,7 @@ GLOBAL_COEFF_RANGE=(0.3 1)
 QK_SIM_COEFF_RANGE=(0)
 PCA_DIM_RANGE=(20 4)
 BATCHSIZE_RANGE=(20 4)
+LAMBDA_RANGE=(0.9 0.5 0.1)
 
 for LR in "${LR_RANGE[@]}"
 do
@@ -53,7 +52,6 @@ for PW in "${PROMPT_WEIGHTS_OPTIONS[@]}"
 do
 for BZ in "${BATCHSIZE_RANGE[@]}"
 do
-LOG_FILE="$LOG_DIR/training_lr${LR}_wd${WD}_penalty${PS}_QKsim${QK}_pool${POOL}_PCADIM${PCADIM}_glonorm${GLONORM:+on}_WPP${WPP:+on}_PW${PW:+on}_groupavg${GROUP_AVG:+on}_gc${GC}_$(date +'%Y%m%d_%H%M%S').log"
 
 CUDA_VISIBLE_DEVICES=${GPU_IDS[$IDX]} python $TRAINING_SCRIPT \
 --config_file $CONFIG_FILE \

@@ -1,6 +1,6 @@
 #!/bin/bash
 cd ..
-GPU_IDS=(2 3 4 5 6 7)  # 사용할 GPU ID 리스트
+GPU_IDS=(0 1 2 3 4 5 6 7)  # 사용할 GPU ID 리스트
 IDX=0
 
 TRAINING_SCRIPT="train.py"
@@ -22,12 +22,19 @@ WD_RANGE=(1e-1 1e-2 1e-3)
 PENALTY_SCALE_RANGE=(0)
 GLONORM_OPTIONS=("")
 WEIGHT_PER_PROMPT_OPTIONS=("")
-PROMPT_WEIGHTS_OPTIONS=('learnable' 'cos_sim')
-SCALING_OPTIONS=('--clip' '--normalize')
-GLOBAL_COEFF_RANGE=(0.3 1)
+SCALING_OPTIONS=('--normalize')
 QK_SIM_COEFF_RANGE=(0)
-PCA_DIM_RANGE=(20 4)
+PCA_DIM_RANGE=(20)
+
+# Search range
+POOL_RANGE=(4 10 20)
+LR_RANGE=(1e-2 1e-3) # 1e-4)
+WD_RANGE=(1e-2 1e-3) #(1e-1 
+PROMPT_WEIGHTS_OPTIONS=('attention')
 BATCHSIZE_RANGE=(20 4)
+QUERY_DIM_RANGE=(4 8 16)
+HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
+GLOBAL_COEFF_RANGE=(1 0.1)
 
 for LR in "${LR_RANGE[@]}"
 do

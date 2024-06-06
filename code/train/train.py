@@ -65,21 +65,28 @@ def get_parser():
     parser.add_argument("--data_root", type=str, default='/bp_benchmark/datasets/ETRI_2023/results')
     # -------------------------------------------------------
     parser.add_argument("--use_group" , action='store_true') # set default to FALSE  
+    parser.add_argument("--use_pt_emb" , action='store_true') # set default to FALSE  
     parser.add_argument("--train_head" , action='store_true') # train regression head
     parser.add_argument("--reset_head" , action='store_true') # reset regression head like LP
     parser.add_argument("--backbone", choices=["resnet1d", "mlpbp", "spectroresnet"], required=True)
     parser.add_argument("--shots", default=0, type=int, help="Few-shot Regression")
     parser.add_argument("--transfer", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
     parser.add_argument("--target", default=None, type=str, choices=["ppgbp", "sensors", "uci2", "bcg"])
-    parser.add_argument("--prompt_weights", default='learnable', type=str, choices=["learnable", "cos_sim"])
+    parser.add_argument("--prompt_weights", default='learnable', type=str, choices=["learnable", "cos_sim", "attention"])
     parser.add_argument("--penalty_scaler" , type=float, default=0.1)
     parser.add_argument("--qk_sim_coeff", type=float, default=0.5)
     parser.add_argument("--pca_dim", default=20, type=int)
+    parser.add_argument("--query_dim", default=32, type=int)
     parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--weight_per_prompt", action='store_true', help="on=> (3, pool), off => (3) learable weight")
     
     parser.add_argument("--lp", action="store_true")
     parser.add_argument("--scratch", action="store_true")
+
+    parser.add_argument("--epochs", default=10, type=int)
+    parser.add_argument("--num_patience", default=100, type=int)
+
+    parser.add_argument("--lam", default=1.0, type=float, help="lam * ppg + (1-lam) * prompt")
     return parser
 
 def parser_to_config(parser, config):
@@ -128,13 +135,19 @@ def main(args):
     # set seed
     seed_everything(config.seed)
 
-    config.param_trainer.max_epochs=10
+    config.param_trainer.max_epochs=config.epochs # 10 # config.epochs
     config.param_trainer.check_val_every_n_epoch=2
     config.param_model.batch_size=args.batch_size
-    config.param_early_stop.patience=100
+    config.param_early_stop.patience=config.num_patience # 100
     config.exp.N_fold=5
+    if config.transfer == 'bcg':
+        config.pt_dim = 256
+    elif config.transfer == 'ppgbp':
+        config.pt_dim = 320
+    elif config.transfer == 'sensors':
+        config.pt_dim = 512
 
-    print(config)
+    # print(config)
 
     #--- get the solver
     if config.exp.model_type in ['unet1d', 'ppgiabp', 'vnet']:
@@ -208,7 +221,7 @@ if __name__ == '__main__':
     
     if not args.ignore_wandb:
         import wandb
-        wandb.init(entity='l2p_bp', project='fewshot_transfer_gumbel', group=group_name)
+        wandb.init(entity='l2p_bp', project='fewshot_transfer_uniform', group=group_name)
         lr = args.lr
         wd = args.wd
         run_name = f'seed:{args.seed}-lr:{lr}-wd:{wd}'
@@ -217,4 +230,5 @@ if __name__ == '__main__':
         
     main(parser.parse_args())
 
-    wandb.finish()
+    if not args.ignore_wandb:
+        wandb.finish()

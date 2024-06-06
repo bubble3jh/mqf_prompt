@@ -58,6 +58,20 @@ class Resnet1d(Regressor):
         self._log_metric(metrics, mode="test")
         return test_step_end_out
     
+    def extract_penultimate_embedding(self, x_ppg):
+        x = x_ppg
+        for name, layer in self.model.named_children():
+            if name == 'main_clf':
+                break
+            if isinstance(layer, nn.ModuleList):
+                for sublayer in layer:
+                    x = sublayer(x)
+            else:
+                x = layer(x)
+        
+        # x is now the output of the penultimate layer
+        penultimate_embedding = x.view(x.size(0), -1)
+        return penultimate_embedding
 
 #%%
 
