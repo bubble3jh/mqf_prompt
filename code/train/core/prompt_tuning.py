@@ -174,8 +174,8 @@ class L2Prompt(nn.Module):
         else:
             self.learnable_weights = nn.Parameter(self._initialize_weights(num_kq))
         
-        if self.config.prompt_weights == 'attention':
-            self.attention = torch.nn.MultiheadAttention(embed_dim=self.model_config["data_dim"], num_heads=2)
+        # if self.config.prompt_weights == 'attention':
+        #     self.attention = torch.nn.MultiheadAttention(embed_dim=self.model_config["data_dim"], num_heads=2)
     
     def _initialize_weights(self, size, num_pool=None):
         if num_pool:
@@ -263,7 +263,7 @@ class L2Prompt(nn.Module):
         if self.config.mul:
             prompted_signal = x['ppg']*self.config.global_coeff*final_prompt
         else:
-            prompted_signal = x['ppg'] + self.config.global_coeff*final_prompt
+            prompted_signal = self.config.lam * x['ppg'] + (1-self.config.lam) * self.config.global_coeff*final_prompt
         
         # Calculate pull_constraint loss (similarity loss) using cos_sim
         # sim_pull = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
