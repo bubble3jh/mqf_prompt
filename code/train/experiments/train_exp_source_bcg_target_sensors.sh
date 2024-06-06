@@ -1,11 +1,9 @@
 #!/bin/bash
 cd ..
-GPU_IDS=(0 1 2 3 4 5 6 7)  # 사용할 GPU ID 리스트
+GPU_IDS=(1 2 3 4 5 6 7)  # 사용할 GPU ID 리스트
 IDX=0
 
 TRAINING_SCRIPT="train.py"
-LOG_DIR="./experiments/logs"
-mkdir -p $LOG_DIR
 
 # Define the fixed parameters
 TRANSFER="bcg"
@@ -16,25 +14,25 @@ BACKBONE="resnet1d"
 SHOTS=5
 PENALTY=""
 
-POOL_RANGE=(4 10)
-LR_RANGE=(1e-2 1e-3 1e-4)
-WD_RANGE=(1e-1 1e-2 1e-3)
-PENALTY_SCALE_RANGE=(0)
+# Fixed Hyper-para
 GLONORM_OPTIONS=("")
+PENALTY_SCALE_RANGE=(0)
 WEIGHT_PER_PROMPT_OPTIONS=("")
-SCALING_OPTIONS=('--normalize')
 QK_SIM_COEFF_RANGE=(0)
+GLOBAL_COEFF_RANGE=(1)
 PCA_DIM_RANGE=(20)
 
 # Search range
-POOL_RANGE=(4 10 20)
-LR_RANGE=(1e-1 1e-2) #1e-3) # 1e-4)
-WD_RANGE=(1e-1 1e-2) #1e-3) #(1e-1 
+POOL_RANGE=(20)
+LR_RANGE=(1e-1 1e-2)
+WD_RANGE=(1e-1 1e-2)
+GLONORM_OPTIONS=("")
 PROMPT_WEIGHTS_OPTIONS=('attention')
-BATCHSIZE_RANGE=(20 4)
-QUERY_DIM_RANGE=(4 8 16)
+SCALING_OPTIONS=('' '--normalize')
+BATCHSIZE_RANGE=(20)
+QUERY_DIM_RANGE=(256 128)
 HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
-GLOBAL_COEFF_RANGE=(1 0.1)
+LAMBDA_RANGE=(0.9 0.5 0.1)
 
 for LR in "${LR_RANGE[@]}"
 do
@@ -60,7 +58,12 @@ for PW in "${PROMPT_WEIGHTS_OPTIONS[@]}"
 do
 for BZ in "${BATCHSIZE_RANGE[@]}"
 do
-LOG_FILE="$LOG_DIR/training_lr${LR}_wd${WD}_penalty${PS}_QKsim${QK}_pool${POOL}_PCADIM${PCADIM}_glonorm${GLONORM:+on}_WPP${WPP:+on}_PW${PW:+on}_groupavg${GROUP_AVG:+on}_gc${GC}_$(date +'%Y%m%d_%H%M%S').log"
+for HD in "${HEAD_OPTIONS[@]}"
+do
+for QD in "${QUERY_DIM_RANGE[@]}"
+do
+for LAM in "${LAMBDA_RANGE[@]}"
+do
 
 CUDA_VISIBLE_DEVICES=${GPU_IDS[$IDX]} python $TRAINING_SCRIPT \
 --config_file $CONFIG_FILE \
@@ -73,6 +76,8 @@ $SO \
 $GLONORM \
 $PENALTY \
 $WPP \
+$HD \
+--query_dim $QD \
 --lr $LR \
 --batch_size $BZ \
 --wd $WD \
@@ -80,20 +85,17 @@ $WPP \
 --global_coeff $GC \
 --qk_sim_coeff $QK \
 --pca_dim $PCADIM \
+--lam $LAM \
 --prompt_weights $PW \
---penalty_scaler $PS > $LOG_FILE 2>&1 &
-
-# Check if the script ran successfully
-if [ $? -eq 0 ]; then
-echo "Training completed successfully with lr=$LR, wd=$WD, penalty=${PENALTY}. Logs can be found at $LOG_FILE"
-else
-echo "Training failed with lr=$LR, wd=$WD, penalty=${PENALTY}. Check logs for more details: $LOG_FILE"
-fi
+--penalty_scaler $PS &
 
 IDX=$(( ($IDX + 1) % ${#GPU_IDS[@]} ))
 if [ $IDX -eq 0 ]; then
 wait
 fi
+done
+done
+done
 done
 done
 done

@@ -1,6 +1,6 @@
 #!/bin/bash
 cd ..
-GPU_IDS=(0 1 2 3 4 5 6 7)  # 사용할 GPU ID 리스트
+GPU_IDS=(1 2 3 4 5 6 7)  # 사용할 GPU ID 리스트
 IDX=0
 
 TRAINING_SCRIPT="train.py"
@@ -92,6 +92,7 @@ IDX=$(( ($IDX + 1) % ${#GPU_IDS[@]} ))
 if [ $IDX -eq 0 ]; then
 wait
 fi
+
 done
 done
 done
