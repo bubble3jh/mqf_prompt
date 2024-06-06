@@ -65,6 +65,7 @@ def get_parser():
     parser.add_argument("--data_root", type=str, default='/bp_benchmark/datasets/ETRI_2023/results')
     # -------------------------------------------------------
     parser.add_argument("--use_group" , action='store_true') # set default to FALSE  
+    parser.add_argument("--use_pt_emb" , action='store_true') # set default to FALSE  
     parser.add_argument("--train_head" , action='store_true') # train regression head
     parser.add_argument("--reset_head" , action='store_true') # reset regression head like LP
     parser.add_argument("--backbone", choices=["resnet1d", "mlpbp", "spectroresnet"], required=True)
@@ -134,8 +135,14 @@ def main(args):
     config.param_model.batch_size=args.batch_size
     config.param_early_stop.patience=100
     config.exp.N_fold=5
+    if config.transfer == 'bcg':
+        config.pt_dim = 256
+    elif config.transfer == 'ppgbp':
+        config.pt_dim = 320
+    elif config.transfer == 'sensors':
+        config.pt_dim = 512
 
-    print(config)
+    # print(config)
 
     #--- get the solver
     if config.exp.model_type in ['unet1d', 'ppgiabp', 'vnet']:
