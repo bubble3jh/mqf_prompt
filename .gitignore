@@ -8,7 +8,11 @@ code/train/wandb
 results/
 real_results/
 real_model
+<<<<<<< HEAD
 *.pt
 code/train/core/loaders/__pycache__
 code/train/core/__pycache__
 code/train/core/models/__pycache__
+=======
+*.pt
+>>>>>>> c11ed76ec07c267c0e8b7fbc2db3f8de3ae92b4b
