@@ -580,6 +580,33 @@ def perform_pca(X, n_components=20):
     principal_components = eigenvectors_sorted[:, :n_components]
     return principal_components, X_mean
 
+def perform_pca_w_fft(X, n_components=20, trunc_leng=None):
+    # Get FFT
+    if trunc_leng is None:
+        fft_num_components = (X.size(2) // 2) + 1 # FFT has symentic matrix
+    else:
+        fft_num_components = trunc_leng
+    reshaped_data = X.view(X.size(0), -1).cpu().numpy()
+    transformed_data = np.fft.fft(reshaped_data, axis=1)
+    fft_emb = torch.tensor(np.real(transformed_data[:, :fft_num_components]), dtype=torch.float32, device=X.device)
+
+    X = fft_emb.squeeze()
+
+    X_mean = torch.mean(X, dim=0)
+    X_centered = X - X_mean
+    
+    covariance_matrix = torch.matmul(X_centered.T, X_centered) / (X_centered.shape[0] - 1)
+
+    torch.backends.cuda.preferred_linalg_library("magma")
+    eigenvalues, eigenvectors = torch.linalg.eigh(covariance_matrix, UPLO='U')
+    
+    idx = torch.argsort(eigenvalues, descending=True)
+    eigenvalues_sorted = eigenvalues[idx]
+    eigenvectors_sorted = eigenvectors[:, idx]
+    
+    principal_components = eigenvectors_sorted[:, :n_components]
+    return principal_components, X_mean
+
 def project_to_pca_plane(new_data, principal_components, mean):
     new_data = new_data.squeeze()
     new_data_centered = new_data - mean

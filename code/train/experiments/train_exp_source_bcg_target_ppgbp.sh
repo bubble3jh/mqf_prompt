@@ -21,8 +21,9 @@ QK_SIM_COEFF_RANGE=(0)
 GLONORM_OPTIONS=("")
 SCALING_OPTIONS=('') # 찾으면 추후에 clip normal
 HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
-LAMBDA_RANGE=(1.0)
+LAMBDA_RANGE=(1)
 PCA_DIM_RANGE=(16)
+PROMPT_WEIGHTS_OPTIONS=("learnable")
 
 # Search range
 POOL_RANGE=(3 10)
@@ -88,7 +89,7 @@ CUDA_VISIBLE_DEVICES=${GPU_IDS[$IDX]} python $TRAINING_SCRIPT \
 --pca_dim $PCADIM \
 --lam $LAM \
 --prompt_weights $PW \
---penalty_scaler $PS
+--penalty_scaler $PS \
 $M \
 $AF \
 $SO \

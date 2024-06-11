@@ -83,11 +83,13 @@ def get_parser():
     parser.add_argument("--scratch", action="store_true")
     parser.add_argument("--use_pt_emb", action="store_true")
     parser.add_argument("--instance", action="store_true")
+    parser.add_argument("--stepbystep", action="store_true")
 
     parser.add_argument("--epochs", default=10, type=int)
     parser.add_argument("--num_patience", default=100, type=int)
-
     parser.add_argument("--lam", default=1.0, type=float, help="lam * ppg + (1-lam) * prompt")
+
+    parser.add_argument("--add_freq", action='store_true')
     return parser
 
 def parser_to_config(parser, config):
@@ -174,7 +176,7 @@ def main(args):
             cv_metrics['name'] += f'_num_pool_{config.num_pool}'
             if config.penalty:
                 cv_metrics['name'] += f'_penalty'
-            
+
         elif config.method == 'prompt_gen' or config.method == 'prompt_glogen':
             cv_metrics['name'] = f'lr_{config.lr}_wd_{config.wd}'
         if config.method in ['prompt_gen', 'prompt_glogen', 'prompt_lowglogen', 'prompt_lowgen']:
@@ -216,12 +218,15 @@ if __name__ == '__main__':
     
     if not args.ignore_wandb:
         import wandb
-        wandb.init(entity='l2p_bp', project='fewshot_transfer_uniform', group=group_name)
+        wandb.init(entity='l2p_bp', project='fewshot_transfer_add_freq', group=group_name)
         lr = args.lr
         wd = args.wd
         run_name = f'seed:{args.seed}-lr:{lr}-wd:{wd}'
         wandb.run.name = run_name
         wandb.config.update(args)
+
+        wandb.save('./core/propmt_tuning.py')
+        wandb.save('./core/solver_s2l.py')
         
     main(parser.parse_args())
 

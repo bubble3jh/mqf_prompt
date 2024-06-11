@@ -335,7 +335,7 @@ class SolverS2l(Solver):
                 tmp_metric['sbp_gal'] = sbp_gal
                 tmp_metric['dbp_gal'] = dbp_gal
                 tmp_metric['gal'] = gal
-                
+
                 if not self.config.ignore_wandb:
                     wandb.log(tmp_metric)
                     wandb.run.summary['sbp_gal'] = sbp_gal
@@ -344,6 +344,11 @@ class SolverS2l(Solver):
                     wandb.run.summary['sbp'] = sbp
                     wandb.run.summary['dbp'] = dbp
                     wandb.run.summary['spdp'] = sbp + dbp
+                    wandb.run.summary[f'spdp_hypo'] = tmp_metric[f'test/sbp_hypo_mae'] + tmp_metric[f'test/dbp_hypo_mae']
+                    wandb.run.summary[f'spdp_normal'] = tmp_metric[f'test/sbp_normal_mae'] + tmp_metric[f'test/dbp_normal_mae']
+                    wandb.run.summary[f'spdp_prehyper'] = tmp_metric[f'test/sbp_prehyper_mae'] + tmp_metric[f'test/dbp_prehyper_mae']
+                    wandb.run.summary[f'spdp_hyper2'] = tmp_metric[f'test/sbp_hyper2_mae'] + tmp_metric[f'test/dbp_hyper2_mae']
+                    
             out_metric.update(tmp_metric)
 
         return out_metric

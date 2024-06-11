@@ -23,6 +23,7 @@ SCALING_OPTIONS=('') # 찾으면 추후에 clip normal
 HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
 LAMBDA_RANGE=(1.0)
 PCA_DIM_RANGE=(16)
+PROMPT_WEIGHTS_OPTIONS=("learnable")
 
 # Search range
 POOL_RANGE=(3 10)

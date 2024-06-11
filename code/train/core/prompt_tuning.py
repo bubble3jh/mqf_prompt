@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.decomposition import IncrementalPCA, PCA
 from pyts.decomposition import SingularSpectrumAnalysis
 import pywt
-from core.utils import perform_pca, project_to_pca_plane, loc_z
+from core.utils import perform_pca, project_to_pca_plane, loc_z, perform_pca_w_fft
 import wandb
 
 def hook_fn(module, input, output):
@@ -77,12 +77,14 @@ class SimpleLinear(nn.Module):
         return x
 
 class PPGEmbeddingGenerator(nn.Module):  
-    def __init__(self, use_group, group_embedding_dim=64, num_groups=4):
+    def __init__(self, group_embedding_dim=64, num_groups=4, trunc_length=None, use_group=False):
         super(PPGEmbeddingGenerator, self).__init__()  # Initialize the parent class
         if use_group:
             self.use_group = use_group
             self.group_embedding_dim = group_embedding_dim
             self.group_lookup_table = nn.Embedding(num_groups, group_embedding_dim) if num_groups is not None else None
+        
+        self.trunc_length=trunc_length
         
     # def pca_transform(self, data, num_components=64):
     #     reshaped_data = data.view(data.size(0), -1).cpu().numpy()
@@ -93,7 +95,7 @@ class PPGEmbeddingGenerator(nn.Module):
     def pca_transform(self, data, pca_matrix=None, pca_mean=None):
         transformed_data = project_to_pca_plane(data, pca_matrix, pca_mean)
         return torch.tensor(transformed_data, dtype=torch.float32, device=data.device)
-
+    
     def ssa_transform(self, data, window_size=125, groups=20):
         reshaped_data = data.view(data.size(0), -1).cpu().numpy()
         ssa = SingularSpectrumAnalysis(window_size=min(window_size, reshaped_data.shape[1]//2), groups=min(groups, reshaped_data.shape[1]//5))
@@ -111,7 +113,10 @@ class PPGEmbeddingGenerator(nn.Module):
         return torch.tensor(transformed_data, dtype=torch.float32, device=data.device)
 
     def fft_transform(self, data):
-        num_components = (data.size(2) // 2) + 1 # FFT has symentic matrix
+        if self.trunc_length is None:
+            num_components = (data.size(2) // 2) + 1 # FFT has symentic matrix
+        else:
+            num_components = self.trunc_length
         
         reshaped_data = data.view(data.size(0), -1).cpu().numpy()
         transformed_data = np.fft.fft(reshaped_data, axis=1)
@@ -127,10 +132,13 @@ class PPGEmbeddingGenerator(nn.Module):
         # group_emb = self.group_lookup_table(groups.to(device))  # Move groups to the same device as ppg
         
         # Generate PCA embedding
-        pca_emb = self.pca_transform(ppg, pca_matrix, pca_mean)
+        # pca_emb = self.pca_transform(ppg, pca_matrix, pca_mean)
         
         # Generate FFT embedding
         fft_emb = self.fft_transform(ppg)
+
+        # Generate PCA after FFT embedding
+        pca_emb = self.pca_transform(fft_emb, pca_matrix, pca_mean)
         
         # Generate Wavelet embedding
         wavelet_emb = self.wavelet_transform(ppg)
@@ -153,6 +161,83 @@ class L2Prompt_INS(nn.Module):
 
         if self.prompts.grad is not None:
             wandb.log({f'Propmts/gradient': wandb.Histogram(self.prompts.grad.cpu().numpy())})
+
+        sim_loss, entropy_penalty = 0,0
+        return prompted_signal, sim_loss, entropy_penalty
+    
+class L2Prompt_stepbystep(nn.Module):
+    def __init__(self, config, model_config, x_min, x_max):
+        super().__init__()
+        self.config = config
+        self.num_pool = config.num_pool
+        self.model_config = model_config
+        self.turnc_dim = 25
+
+        # Query
+        self.pca_proj = nn.Linear(config.pca_dim, config.query_dim, bias=False)
+        self.ppg_embedding_generator = PPGEmbeddingGenerator(self.config.query_dim, trunc_length=self.turnc_dim)
+        
+        # Key
+        self.keys = nn.Parameter(torch.randn(self.num_pool, 1, self.config.query_dim))
+        nn.init.uniform_(self.keys,-1,1)
+
+        # Prompts (Value)
+        self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
+        if config.add_freq:
+            self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.turnc_dim*2))
+        nn.init.uniform_(self.prompts,-1,1)
+    
+    def forward(self, x, group_labels, pca_matrix, pca_mean):
+        bs = x['ppg'].shape[0]
+        dim = x['ppg'].shape[-1]
+
+        # pca_emb: FFT=>PCA (Batch, PCA_DIM)
+        pca_emb, _, _ = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean)
+
+        if len(pca_emb.shape) == 1:
+            pca_emb = pca_emb.unsqueeze(0)
+
+        query = self.pca_proj(pca_emb) # Batch, D_q
+        query = query.unsqueeze(1)
+
+        d_k = query.size(-1)
+        qk = torch.einsum('bid,pid->bip', query, self.keys) / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
+        gumbel_samples = F.gumbel_softmax(qk, tau=1.0, hard=True)
+        top1_prompts = torch.einsum('bip,pid->bid', gumbel_samples, self.prompts)
+
+        if self.config.add_freq:
+            # fft + propmt
+            prompt_add_fft = torch.fft.fft(x['ppg'], dim=-1)
+    
+            # 1번째부터 turnc_dim+1 번째까지 값을 넣고 나머지에 zero padding
+            truncated_prompt_real = torch.zeros_like(x['ppg'], dtype=torch.float)
+            truncated_prompt_imag = torch.zeros_like(x['ppg'], dtype=torch.float)
+
+            truncated_prompt_real[:,:,1:self.turnc_dim+1] = self.config.global_coeff*top1_prompts[:,:,:self.turnc_dim]
+            truncated_prompt_imag[:,:,1:self.turnc_dim+1] = self.config.global_coeff*top1_prompts[:,:,self.turnc_dim:]
+
+            # truncated_prompt_imag = torch.concat((zeros_imag, self.config.global_coeff*top1_prompts[:,:,1:self.turnc_dim+1]), dim=-1)
+            prompt_add_fft_real = prompt_add_fft.real + truncated_prompt_real
+            prompt_add_fft_imag = prompt_add_fft.imag + truncated_prompt_imag
+            prompt_add_fft = torch.complex(prompt_add_fft_real, prompt_add_fft_imag)
+
+            # prompted_signal = Inverse FFT(prompt_add_fft)
+            prompted_signal = torch.fft.ifft(prompt_add_fft, dim=-1).real
+
+        else:
+            # Pure add (ppg + propmt)
+            prompted_signal = x['ppg'] + self.config.global_coeff*top1_prompts
+
+        if self.prompts.grad is not None:
+            wandb.log({f'Prompts/gradient': wandb.Histogram(self.prompts.grad.cpu().numpy())})
+            wandb.log({f'key/gradient': wandb.Histogram(self.keys.grad.cpu().numpy())})
+
+            if self.config.add_freq:
+                wandb.log({f'Prompts/weight4real': wandb.Histogram(self.prompts.data[:,:,:self.turnc_dim].detach().cpu().numpy())})
+                wandb.log({f'Prompts/weight4imag': wandb.Histogram(self.prompts.data[:,:,self.turnc_dim:].detach().cpu().numpy())})
+                wandb.log({f'FFT/real': wandb.Histogram(prompt_add_fft_real.detach().cpu().numpy())})
+                wandb.log({f'FFT/imag': wandb.Histogram(prompt_add_fft_imag.detach().cpu().numpy())})
+                wandb.log({f'FFT/diff': wandb.Histogram((prompted_signal - x['ppg']).detach().cpu().numpy())})
 
         sim_loss, entropy_penalty = 0,0
         return prompted_signal, sim_loss, entropy_penalty
@@ -249,13 +334,12 @@ class L2Prompt(nn.Module):
                 weights = F.softmax(weights, dim=-1)  # Shape: (batch_size, 3)
         elif self.config.prompt_weights == 'attention':
             # Use attention to merge original signal and top1_prompts
-            # import pdb; pdb.set_trace()
             weights = torch.einsum('bcd,bkd->bk', x['ppg'], top1_prompts)
             weights = F.softmax(weights, dim=-1)
 
         # Compute weighted sum of prompts
         final_prompt = (weights.unsqueeze(-1) * top1_prompts).sum(dim=1, keepdim=True)  # Shape: (batch_size, 1, prompt_dim)
-                
+           
         if self.config.glonorm:
             final_prompt = global_normalizer(final_prompt, self.x_min, self.x_max)
         
@@ -269,7 +353,7 @@ class L2Prompt(nn.Module):
         # sim_pull = cos_sim.gather(-1, top1_indices).squeeze(-1)
         # sim_loss = torch.clamp(1 - sim_pull.mean(), min=0)
         sim_loss = 0
-          # Negative to maximize similarity
+        # Negative to maximize similarity
 
         # top_prompt_idx = top1_indices.detach().cpu().numpy()
         # wandb.log({"top_prompt_idx": wandb.Table(data=top_prompt_idx, columns=["PCA", "FFT", "Wave"])})
@@ -296,8 +380,11 @@ class Custom_model(pl.LightningModule):
         self.ppg_min = stats[0]
         self.ppg_max = stats[1]
 
-        if not self.config.instance:
+        if not self.config.instance and not self.config.stepbystep:
             self.prompt_learner_glo =L2Prompt(self.config, self.model_config, self.ppg_min, self.ppg_max)
+        elif self.config.stepbystep and not self.config.instance:
+            self.prompt_learner_glo =L2Prompt_stepbystep(self.config, self.model_config, self.ppg_min, self.ppg_max)
+            self.turnc_dim = self.prompt_learner_glo.turnc_dim
         else:
             self.prompt_learner_glo =L2Prompt_INS(self.config, self.model_config, self.ppg_min, self.ppg_max)
 
@@ -378,7 +465,8 @@ class Custom_model(pl.LightningModule):
         self.step_mode = 'train'
         if (self.pca_matrix==None):
             assert len(batch[0]['ppg']==self.config.param_model.batch_size)
-            self.pca_matrix, self.pca_train_mean = perform_pca(batch[0]['ppg'], n_components=self.config.pca_dim)
+            # self.pca_matrix, self.pca_train_mean = perform_pca(batch[0]['ppg'], n_components=self.config.pca_dim)
+            self.pca_matrix, self.pca_train_mean = perform_pca_w_fft(batch[0]['ppg'], n_components=self.config.pca_dim, trunc_leng=self.turnc_dim)
         loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode = 'train')
         self.log('train_loss', loss, on_step=True, on_epoch=True, logger=True)
         return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group} 
@@ -393,8 +481,9 @@ class Custom_model(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         self.step_mode = 'val'
         if (self.pca_matrix == None):
-            self.sanity_pca_matrix = torch.randn((batch[0]['ppg'].shape[-1], self.config.pca_dim)).cuda()
-            self.sanity_val_mean = torch.mean(batch[0]['ppg'], dim=0)
+            # self.sanity_pca_matrix = torch.randn((batch[0]['ppg'].shape[-1], self.config.pca_dim)).cuda()
+            self.sanity_pca_matrix = torch.randn((self.turnc_dim, self.config.pca_dim)).cuda() # FFT dim size 313
+            self.sanity_val_mean = 0 # torch.mean(batch[0]['ppg'], dim=0)
         loss, pred_bp, t_abp, label, group  = self._shared_step(batch, mode='val')
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
         return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group}  
