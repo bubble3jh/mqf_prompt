@@ -1,6 +1,6 @@
 #!/bin/bash
 cd ..
-GPU_IDS=(1 2 3 4 5 6 7)  # 사용할 GPU ID 리스트
+GPU_IDS=(0 5 6 7)  # 사용할 GPU ID 리스트
 IDX=0
 
 TRAINING_SCRIPT="train.py"
@@ -15,24 +15,31 @@ SHOTS=5
 PENALTY=""
 
 # Fixed Hyper-para
-GLONORM_OPTIONS=("")
 PENALTY_SCALE_RANGE=(0)
 WEIGHT_PER_PROMPT_OPTIONS=("")
-SCALING_OPTIONS=('--normalize')
 QK_SIM_COEFF_RANGE=(0)
-PCA_DIM_RANGE=(20)
+GLONORM_OPTIONS=("")
+SCALING_OPTIONS=('') # 찾으면 추후에 clip normal
+HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
+LAMBDA_RANGE=(1.0)
+PCA_DIM_RANGE=(16)
 
 # Search range
-POOL_RANGE=(4 30) # 4 10 20)
-LR_RANGE=(1e-1 1e-2 1e-3) # 1e-4)
-WD_RANGE=(1e-2 1e-3) #(1e-1 
-PROMPT_WEIGHTS_OPTIONS=('attention')
-BATCHSIZE_RANGE=(20) # 4)
-QUERY_DIM_RANGE=(16) #4 8 16)
-HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
-GLOBAL_COEFF_RANGE=(1) # 0.1)
-LAMBDA_RANGE=(0.9 0.5 0.1)
+POOL_RANGE=(3 10)
+LR_RANGE=(1e-1 1e-2 1e-3)
+WD_RANGE=(1e-1 1e-2 1e-3)
+GLOBAL_COEFF_RANGE=(10 5 20)
+BATCHSIZE_RANGE=(4 10 20)
+QUERY_DIM_RANGE=(16 64)
 
+# Method
+METHOD_OPTIONS=("--stepbystep")
+ADD_FREQ=("--add_freq")
+
+for M in "${METHOD_OPTIONS[@]}"
+do
+for AF in "${ADD_FREQ[@]}"
+do
 for LR in "${LR_RANGE[@]}"
 do
 for WD in "${WD_RANGE[@]}"
@@ -71,11 +78,6 @@ CUDA_VISIBLE_DEVICES=${GPU_IDS[$IDX]} python $TRAINING_SCRIPT \
 --shots $SHOTS \
 --transfer $TRANSFER \
 --target $TARGET \
-$SO \
-$GLONORM \
-$PENALTY \
-$WPP \
-$HD \
 --query_dim $QD \
 --lr $LR \
 --batch_size $BZ \
@@ -86,13 +88,21 @@ $HD \
 --pca_dim $PCADIM \
 --lam $LAM \
 --prompt_weights $PW \
---penalty_scaler $PS &
+--penalty_scaler $PS \
+$M \
+$AF \
+$SO \
+$GLONORM \
+$PENALTY \
+$WPP \
+$HD &
 
 IDX=$(( ($IDX + 1) % ${#GPU_IDS[@]} ))
 if [ $IDX -eq 0 ]; then
 wait
 fi
-
+done
+done
 done
 done
 done
