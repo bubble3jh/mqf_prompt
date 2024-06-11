@@ -81,6 +81,8 @@ def get_parser():
     
     parser.add_argument("--lp", action="store_true")
     parser.add_argument("--scratch", action="store_true")
+    parser.add_argument("--use_pt_emb", action="store_true")
+    parser.add_argument("--instance", action="store_true")
 
     parser.add_argument("--epochs", default=10, type=int)
     parser.add_argument("--num_patience", default=100, type=int)

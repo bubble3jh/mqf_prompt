@@ -116,10 +116,11 @@ class PPGEmbeddingGenerator(nn.Module):
         reshaped_data = data.view(data.size(0), -1).cpu().numpy()
         transformed_data = np.fft.fft(reshaped_data, axis=1)
         return torch.tensor(np.real(transformed_data[:, :num_components]), dtype=torch.float32, device=data.device)
-    
-    def gen_ppg_emb(self, ppg, groups, pca_matrix, pca_mean, res_model):
+
+    def gen_ppg_emb(self, ppg, groups, pca_matrix, pca_mean):
         # Ensure the input data is in the correct shape
         assert len(ppg.shape) == 3 and ppg.shape[1] == 1, "PPG data should be in shape [batch_size, 1, seq_len]"
+        
         device = ppg.device  # Get the device of the input PPG data
         
         # Generate Group embedding
@@ -133,12 +134,29 @@ class PPGEmbeddingGenerator(nn.Module):
         
         # Generate Wavelet embedding
         wavelet_emb = self.wavelet_transform(ppg)
-        
-        # Generate Pretrained model embedding
-        pt_emb = res_model.extract_penultimate_embedding(ppg).squeeze()
 
-        return pca_emb, fft_emb, wavelet_emb, pt_emb
+        return pca_emb, fft_emb, wavelet_emb
     
+class L2Prompt_INS(nn.Module):
+    def __init__(self, config, model_config, x_min, x_max):
+        super().__init__()
+        self.config = config
+        self.model_config = model_config
+
+        self.prompts = nn.Parameter(torch.randn(20, 1, self.model_config["data_dim"]))
+        nn.init.uniform_(self.prompts,-1,1)
+
+    def forward(self, x, group_labels, pca_matrix, pca_mean):
+        bs = x['ppg'].shape[0]
+
+        prompted_signal = x['ppg'] + self.config.global_coeff*self.prompts[:bs,:,:]
+
+        if self.prompts.grad is not None:
+            wandb.log({f'Propmts/gradient': wandb.Histogram(self.prompts.grad.cpu().numpy())})
+
+        sim_loss, entropy_penalty = 0,0
+        return prompted_signal, sim_loss, entropy_penalty
+
 class L2Prompt(nn.Module):
     def __init__(self, config, model_config, x_min, x_max):
         super().__init__()
@@ -155,13 +173,10 @@ class L2Prompt(nn.Module):
         # Projection Matrix for feature querys
         self.pca_proj = nn.Linear(config.pca_dim, config.query_dim, bias=False)
         self.fft_proj = nn.Linear(model_config["data_dim"]//2 + 1, config.query_dim, bias=False)
-        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], config.query_dim, bias=False)
-        if config.use_pt_emb:
-            self.pt_proj = nn.Linear(config.pt_dim, config.query_dim, bias=False)    
+        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], config.query_dim, bias=False)    
         
         # Initialize learnable parameters for keys and prompts
-        num_kq = 4 if config.use_pt_emb else 3
-        self.keys = nn.Parameter(torch.randn(self.num_pool, num_kq, self.config.query_dim))
+        self.keys = nn.Parameter(torch.randn(self.num_pool, 3 if not config.use_group else 4, self.config.query_dim))
         nn.init.uniform_(self.keys,-1,1)
 
         self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
@@ -170,9 +185,9 @@ class L2Prompt(nn.Module):
         # Initialize learnable weights
         self.weight_per_prompt = config.weight_per_prompt
         if self.weight_per_prompt:
-            self.learnable_weights = nn.Parameter(self._initialize_weights(num_kq, self.num_pool))
+            self.learnable_weights = nn.Parameter(self._initialize_weights(3 if not config.use_group else 4, self.num_pool))
         else:
-            self.learnable_weights = nn.Parameter(self._initialize_weights(num_kq))
+            self.learnable_weights = nn.Parameter(self._initialize_weights(3 if not config.use_group else 4))
         
         # if self.config.prompt_weights == 'attention':
         #     self.attention = torch.nn.MultiheadAttention(embed_dim=self.model_config["data_dim"], num_heads=2)
@@ -186,46 +201,30 @@ class L2Prompt(nn.Module):
             torch.nn.init.xavier_uniform_(weights)
             weights = weights.squeeze()
         return weights
-
-    def count_frequencies(self, tensor,k): 
-        unique_values, counts = torch.unique(tensor, return_counts=True)
-        frequencies = {}
-        for i in range(20):
-            frequencies[i] = 0
-        for value, count in zip(unique_values, counts):
-            frequencies[value.item()] = count.item()
-        return frequencies   
     
-    def forward(self, x, group_labels, pca_matrix, pca_mean, res_model):
+    def forward(self, x, group_labels, pca_matrix, pca_mean):
         bz = x['ppg'].shape[0]
         
         # Generate PPG embeddings
-        pca_emb, fft_emb, wavelet_emb, pt_emb = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean, res_model)
-        
+        pca_emb, fft_emb, wavelet_emb = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean)
+
         if len(pca_emb.shape) == 1:
             pca_emb = pca_emb.unsqueeze(0)
         if len(fft_emb.shape) == 1:
             fft_emb = fft_emb.unsqueeze(0)
         if len(wavelet_emb.shape) == 1:
             wavelet_emb = wavelet_emb.unsqueeze(0)
-        if self.config.use_pt_emb:
-            if len(pt_emb.shape) == 1:
-                pt_emb = pt_emb.unsqueeze(0)
 
-        # Project each feature to same dimensions
+        # Project each feature to 64 dimensions
         pca_emb = self.pca_proj(pca_emb)
         fft_emb = self.fft_proj(fft_emb)
         wavelet_emb = self.wavelet_proj(wavelet_emb)
-        emb_list = [pca_emb, fft_emb, wavelet_emb]
 
-        # Optionally add pt_emb if use_pt_emb is True
-        if self.config.use_pt_emb:
-            pt_emb = self.pt_proj(pt_emb)
-            emb_list.append(pt_emb)
-
-        queries = torch.stack(emb_list, dim=1)
+        # Concatenate the projected features to form the query
+        queries = torch.stack([pca_emb, fft_emb, wavelet_emb], dim=1)
         
         d_k = queries.size(-1)  # query의 마지막 차원의 크기
+        
         cos_sim = torch.einsum('bqd,nqd->bqn', queries, self.keys) / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
 
         gumbel_sample = F.gumbel_softmax(cos_sim, tau=1.0, hard=True)
@@ -280,13 +279,12 @@ class L2Prompt(nn.Module):
         # entropy_penalty = -entropy  # Negative to minimize entropy
         entropy_penalty = 0
         
-        if not self.config.ignore_wandb:
-            if self.prompts.grad is not None:
-                wandb.log({f'Propmts/gradient': wandb.Histogram(self.prompts.grad.cpu().numpy())})
-                wandb.log({f'key/gradient': wandb.Histogram(self.keys.grad.cpu().numpy())})
-        
+        if self.prompts.grad is not None:
+            wandb.log({f'Propmts/gradient': wandb.Histogram(self.prompts.grad.cpu().numpy())})
+            wandb.log({f'key/gradient': wandb.Histogram(self.keys.grad.cpu().numpy())})
+
         return prompted_signal, sim_loss, entropy_penalty
-    
+
 class Custom_model(pl.LightningModule):
     def __init__(self, model, data_shape, model_config, config, stats, fold):
         super().__init__()
@@ -297,7 +295,11 @@ class Custom_model(pl.LightningModule):
         self.model_config = model_config
         self.ppg_min = stats[0]
         self.ppg_max = stats[1]
-        self.prompt_learner_glo =L2Prompt(self.config, self.model_config, self.ppg_min, self.ppg_max)
+
+        if not self.config.instance:
+            self.prompt_learner_glo =L2Prompt(self.config, self.model_config, self.ppg_min, self.ppg_max)
+        else:
+            self.prompt_learner_glo =L2Prompt_INS(self.config, self.model_config, self.ppg_min, self.ppg_max)
 
         #Loss Function
         if self.config.group_avg:
@@ -315,9 +317,11 @@ class Custom_model(pl.LightningModule):
     def _shared_step(self, batch, mode):
         x_ppg, y, group, x_abp, peakmask, vlymask = batch
         if (self.pca_matrix == None) & (self.step_mode=="val"):
-            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.sanity_pca_matrix, self.sanity_val_mean, self.res_model)
+            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.sanity_pca_matrix, self.sanity_val_mean)
         else:
-            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.pca_matrix, self.pca_train_mean, self.res_model)
+            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.pca_matrix, self.pca_train_mean)
+        
+
         if self.config.normalize:
             merged = normalizer(x_ppg["ppg"], merged)
         if self.config.clip:

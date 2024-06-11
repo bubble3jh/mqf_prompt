@@ -34,8 +34,11 @@ class WavDataModule(pl.LightningDataModule):
                                 is_print=is_print)
 
         batch_size = self.config.param_model.batch_size
-        return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=(mode=="train"), 
+        return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=False, 
                           worker_init_fn=seed_worker)
+    
+        # return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=(mode=="train"), 
+        #                   worker_init_fn=seed_worker)
         
     def train_dataloader(self, is_print=False):
         return self._get_loader(self.folds_train, "train", is_print=is_print)

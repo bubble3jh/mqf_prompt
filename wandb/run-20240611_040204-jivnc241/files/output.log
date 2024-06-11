@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/data1/deepdog/project/bp_L2P/code/train/train.py", line 224, in <module>
+    main(parser.parse_args())
+  File "/data1/deepdog/project/bp_L2P/code/train/train.py", line 105, in main
+    raise RuntimeError("config_file {} does not exist".format(args.config_file))
+RuntimeError: config_file core/config/dl/resnet/resnet_sensors.yaml does not exist
