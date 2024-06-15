@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.decomposition import IncrementalPCA, PCA
 from pyts.decomposition import SingularSpectrumAnalysis
 import pywt
-from core.utils import perform_pca, project_to_pca_plane, loc_z, perform_pca_w_fft
+from core.utils import perform_pca, project_to_pca_plane, loc_z, perform_pca_w_fft, freq_norm, freq_denorm
 import wandb
 
 def hook_fn(module, input, output):
@@ -208,7 +208,8 @@ class L2Prompt_stepbystep(nn.Module):
         if self.config.add_freq:
             # fft + propmt
             prompt_add_fft = torch.fft.fft(x['ppg'], dim=-1)
-    
+            prompt_add_fft_real, freq_real_min, freq_real_max = freq_norm(prompt_add_fft.real)
+            prompt_add_fft_imag, freq_imag_min, freq_imag_max = freq_norm(prompt_add_fft.imag)
             # 1번째부터 turnc_dim+1 번째까지 값을 넣고 나머지에 zero padding
             truncated_prompt_real = torch.zeros_like(x['ppg'], dtype=torch.float)
             truncated_prompt_imag = torch.zeros_like(x['ppg'], dtype=torch.float)
@@ -217,13 +218,24 @@ class L2Prompt_stepbystep(nn.Module):
             truncated_prompt_imag[:,:,1:self.turnc_dim+1] = self.config.global_coeff*top1_prompts[:,:,self.turnc_dim:]
 
             # truncated_prompt_imag = torch.concat((zeros_imag, self.config.global_coeff*top1_prompts[:,:,1:self.turnc_dim+1]), dim=-1)
-            prompt_add_fft_real = prompt_add_fft.real + truncated_prompt_real
-            prompt_add_fft_imag = prompt_add_fft.imag + truncated_prompt_imag
+            prompt_add_fft_real = freq_denorm(prompt_add_fft_real + truncated_prompt_real, freq_real_min, freq_real_max)
+            prompt_add_fft_imag = freq_denorm(prompt_add_fft_imag + truncated_prompt_imag, freq_imag_min, freq_imag_max)
             prompt_add_fft = torch.complex(prompt_add_fft_real, prompt_add_fft_imag)
 
             # prompted_signal = Inverse FFT(prompt_add_fft)
             prompted_signal = torch.fft.ifft(prompt_add_fft, dim=-1).real
 
+            # # save datas
+            # saved_data = {
+            #     'original_ppg': x['ppg'],
+            #     'prompt_add_fft_real': prompt_add_fft_real,
+            #     'original_fft_real': prompt_add_fft.real,
+            #     'prompted_signal': prompted_signal
+            # }
+
+            # # .pt 파일로 저장
+            # torch.save(saved_data, "./saved_data.pt")
+            
         else:
             # Pure add (ppg + propmt)
             prompted_signal = x['ppg'] + self.config.global_coeff*top1_prompts

@@ -109,6 +109,19 @@ def global_denorm(x, signal_type):
     # Return values normalized between 0 and 1
     return x * (x_max-x_min) + x_min
 
+def freq_norm(x):
+    x_min, _ = torch.min(x, dim=2, keepdim=True)
+    x_max, _ = torch.max(x, dim=2, keepdim=True)
+    
+    if torch.any(x_max - x_min == 0):
+        return None
+
+    normalized = (x - x_min) / (x_max - x_min)
+    return normalized, x_min, x_max
+
+def freq_denorm(x, x_min, x_max):
+    return x * (x_max - x_min) + x_min
+
 def glob_demm(x, config, type='SP'): 
     # sensors global max, min
     if type=='SP':
