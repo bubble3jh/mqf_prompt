@@ -83,13 +83,17 @@ def get_parser():
     parser.add_argument("--scratch", action="store_true")
     parser.add_argument("--use_pt_emb", action="store_true")
     parser.add_argument("--instance", action="store_true")
+
+    # for FFT iFFT
     parser.add_argument("--stepbystep", action="store_true")
+    parser.add_argument("--add_freq", action='store_true')  
+    parser.add_argument("--trunc_dim", default=25, type=int) #25?
+    parser.add_argument("--train_imag", action="store_true")
 
     parser.add_argument("--epochs", default=10, type=int)
     parser.add_argument("--num_patience", default=100, type=int)
     parser.add_argument("--lam", default=1.0, type=float, help="lam * ppg + (1-lam) * prompt")
 
-    parser.add_argument("--add_freq", action='store_true')
     return parser
 
 def parser_to_config(parser, config):

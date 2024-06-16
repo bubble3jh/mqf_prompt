@@ -171,11 +171,11 @@ class L2Prompt_stepbystep(nn.Module):
         self.config = config
         self.num_pool = config.num_pool
         self.model_config = model_config
-        self.turnc_dim = 25
+        self.trunc_dim = config.trunc_dim
 
         # Query
         self.pca_proj = nn.Linear(config.pca_dim, config.query_dim, bias=False)
-        self.ppg_embedding_generator = PPGEmbeddingGenerator(self.config.query_dim, trunc_length=self.turnc_dim)
+        self.ppg_embedding_generator = PPGEmbeddingGenerator(self.config.query_dim, trunc_length=self.trunc_dim)
         
         # Key
         self.keys = nn.Parameter(torch.randn(self.num_pool, 1, self.config.query_dim))
@@ -184,7 +184,7 @@ class L2Prompt_stepbystep(nn.Module):
         # Prompts (Value)
         self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
         if config.add_freq:
-            self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.turnc_dim*2))
+            self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.trunc_dim*2 if config.train_imag else self.trunc_dim))
         nn.init.uniform_(self.prompts,-1,1)
     
     def forward(self, x, group_labels, pca_matrix, pca_mean):
@@ -207,19 +207,21 @@ class L2Prompt_stepbystep(nn.Module):
 
         if self.config.add_freq:
             # fft + propmt
-            prompt_add_fft = torch.fft.fft(x['ppg'], dim=-1)
-            prompt_add_fft_real, freq_real_min, freq_real_max = freq_norm(prompt_add_fft.real)
-            prompt_add_fft_imag, freq_imag_min, freq_imag_max = freq_norm(prompt_add_fft.imag)
-            # 1번째부터 turnc_dim+1 번째까지 값을 넣고 나머지에 zero padding
+            ppg_fft = torch.fft.fft(x['ppg'], dim=-1)
+            ppg_fft_real, freq_real_min, freq_real_max = freq_norm(ppg_fft.real)
+            ppg_fft_imag, freq_imag_min, freq_imag_max = freq_norm(ppg_fft.imag)
+            # 1번째부터 trunc_dim+1 번째까지 값을 넣고 나머지에 zero padding
             truncated_prompt_real = torch.zeros_like(x['ppg'], dtype=torch.float)
             truncated_prompt_imag = torch.zeros_like(x['ppg'], dtype=torch.float)
 
-            truncated_prompt_real[:,:,1:self.turnc_dim+1] = self.config.global_coeff*top1_prompts[:,:,:self.turnc_dim]
-            truncated_prompt_imag[:,:,1:self.turnc_dim+1] = self.config.global_coeff*top1_prompts[:,:,self.turnc_dim:]
+            truncated_prompt_real[:,:,1:self.trunc_dim+1] = self.config.global_coeff*top1_prompts[:,:,:self.trunc_dim]
+            prompt_add_fft_real = freq_denorm(ppg_fft_real + truncated_prompt_real, freq_real_min, freq_real_max)
 
-            # truncated_prompt_imag = torch.concat((zeros_imag, self.config.global_coeff*top1_prompts[:,:,1:self.turnc_dim+1]), dim=-1)
-            prompt_add_fft_real = freq_denorm(prompt_add_fft_real + truncated_prompt_real, freq_real_min, freq_real_max)
-            prompt_add_fft_imag = freq_denorm(prompt_add_fft_imag + truncated_prompt_imag, freq_imag_min, freq_imag_max)
+            if self.config.train_imag:
+                truncated_prompt_imag[:,:,1:self.trunc_dim+1] = self.config.global_coeff*top1_prompts[:,:,self.trunc_dim:]
+                prompt_add_fft_imag = freq_denorm(ppg_fft_imag + truncated_prompt_imag, freq_imag_min, freq_imag_max)
+            else:
+                prompt_add_fft_imag = freq_denorm(ppg_fft_imag, freq_imag_min, freq_imag_max)
             prompt_add_fft = torch.complex(prompt_add_fft_real, prompt_add_fft_imag)
 
             # prompted_signal = Inverse FFT(prompt_add_fft)
@@ -245,8 +247,8 @@ class L2Prompt_stepbystep(nn.Module):
             wandb.log({f'key/gradient': wandb.Histogram(self.keys.grad.cpu().numpy())})
 
             if self.config.add_freq:
-                wandb.log({f'Prompts/weight4real': wandb.Histogram(self.prompts.data[:,:,:self.turnc_dim].detach().cpu().numpy())})
-                wandb.log({f'Prompts/weight4imag': wandb.Histogram(self.prompts.data[:,:,self.turnc_dim:].detach().cpu().numpy())})
+                wandb.log({f'Prompts/weight4real': wandb.Histogram(self.prompts.data[:,:,:self.trunc_dim].detach().cpu().numpy())})
+                wandb.log({f'Prompts/weight4imag': wandb.Histogram(self.prompts.data[:,:,self.trunc_dim:].detach().cpu().numpy())})
                 wandb.log({f'FFT/real': wandb.Histogram(prompt_add_fft_real.detach().cpu().numpy())})
                 wandb.log({f'FFT/imag': wandb.Histogram(prompt_add_fft_imag.detach().cpu().numpy())})
                 wandb.log({f'FFT/diff': wandb.Histogram((prompted_signal - x['ppg']).detach().cpu().numpy())})
@@ -396,7 +398,7 @@ class Custom_model(pl.LightningModule):
             self.prompt_learner_glo =L2Prompt(self.config, self.model_config, self.ppg_min, self.ppg_max)
         elif self.config.stepbystep and not self.config.instance:
             self.prompt_learner_glo =L2Prompt_stepbystep(self.config, self.model_config, self.ppg_min, self.ppg_max)
-            self.turnc_dim = self.prompt_learner_glo.turnc_dim
+            self.trunc_dim = self.prompt_learner_glo.trunc_dim
         else:
             self.prompt_learner_glo =L2Prompt_INS(self.config, self.model_config, self.ppg_min, self.ppg_max)
 
@@ -478,7 +480,7 @@ class Custom_model(pl.LightningModule):
         if (self.pca_matrix==None):
             assert len(batch[0]['ppg']==self.config.param_model.batch_size)
             # self.pca_matrix, self.pca_train_mean = perform_pca(batch[0]['ppg'], n_components=self.config.pca_dim)
-            self.pca_matrix, self.pca_train_mean = perform_pca_w_fft(batch[0]['ppg'], n_components=self.config.pca_dim, trunc_leng=self.turnc_dim)
+            self.pca_matrix, self.pca_train_mean = perform_pca_w_fft(batch[0]['ppg'], n_components=self.config.pca_dim, trunc_leng=self.trunc_dim)
         loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode = 'train')
         self.log('train_loss', loss, on_step=True, on_epoch=True, logger=True)
         return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group} 
@@ -494,7 +496,7 @@ class Custom_model(pl.LightningModule):
         self.step_mode = 'val'
         if (self.pca_matrix == None):
             # self.sanity_pca_matrix = torch.randn((batch[0]['ppg'].shape[-1], self.config.pca_dim)).cuda()
-            self.sanity_pca_matrix = torch.randn((self.turnc_dim, self.config.pca_dim)).cuda() # FFT dim size 313
+            self.sanity_pca_matrix = torch.randn((self.trunc_dim, self.config.pca_dim)).cuda() # FFT dim size 313
             self.sanity_val_mean = 0 # torch.mean(batch[0]['ppg'], dim=0)
         loss, pred_bp, t_abp, label, group  = self._shared_step(batch, mode='val')
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
