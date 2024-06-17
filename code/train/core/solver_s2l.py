@@ -224,7 +224,7 @@ class SolverS2l(Solver):
                 model = Custom_model(res_model, data_shape, model_config, self.config, stats, foldIdx)
 
                 for name, param in model.named_parameters():
-                    train_list = ['prompt_learner', 'bn', 'main_clf'] if self.config.train_head else ['prompt_learner', 'bn']
+                    train_list = ['prompt_learner', 'main_clf'] if self.config.train_head else ['prompt_learner']
                     if any(train_param in name for train_param in train_list):
                         param.requires_grad_(True)
                     else:

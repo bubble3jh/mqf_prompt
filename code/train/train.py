@@ -87,8 +87,9 @@ def get_parser():
     # for FFT iFFT
     parser.add_argument("--stepbystep", action="store_true")
     parser.add_argument("--add_freq", action='store_true')  
-    parser.add_argument("--trunc_dim", default=25, type=int) #25?
+    parser.add_argument("--trunc_dim", default=50, type=int) #25?
     parser.add_argument("--train_imag", action="store_true")
+    parser.add_argument("--pass_pca", action="store_true")
 
     parser.add_argument("--epochs", default=10, type=int)
     parser.add_argument("--num_patience", default=100, type=int)
@@ -222,7 +223,7 @@ if __name__ == '__main__':
     
     if not args.ignore_wandb:
         import wandb
-        wandb.init(entity='l2p_bp', project='fewshot_transfer_add_freq', group=group_name)
+        wandb.init(entity='l2p_bp', project='fewshot_transfer_add_freq_v2', group=group_name)
         lr = args.lr
         wd = args.wd
         run_name = f'seed:{args.seed}-lr:{lr}-wd:{wd}'

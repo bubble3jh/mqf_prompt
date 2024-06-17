@@ -1,6 +1,6 @@
 #!/bin/bash
 cd ..
-GPU_IDS=(3 4 5 6)  # 사용할 GPU ID 리스트
+GPU_IDS=(1 2 3 4 5 6 7)  # 사용할 GPU ID 리스트
 IDX=0
 
 TRAINING_SCRIPT="train.py"
@@ -19,19 +19,22 @@ PENALTY_SCALE_RANGE=(0)
 WEIGHT_PER_PROMPT_OPTIONS=("")
 QK_SIM_COEFF_RANGE=(0)
 GLONORM_OPTIONS=("")
-SCALING_OPTIONS=("") # 찾으면 추후에 clip normal
-HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
-LAMBDA_RANGE=(1.0)
+SCALING_OPTIONS=('') # 찾으면 추후에 clip normal
+LAMBDA_RANGE=(1)
 PCA_DIM_RANGE=(16)
 PROMPT_WEIGHTS_OPTIONS=("learnable")
 
 # Search range
-POOL_RANGE=(3 10)
+PASS_PCA_OPTIONS=("--pass_pca")
+HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
+IMAG_ON=("" "--train_imag")
 LR_RANGE=(1e-1 1e-2 1e-3)
 WD_RANGE=(1e-1 1e-2 1e-3)
-GLOBAL_COEFF_RANGE=(10 5 20)
-BATCHSIZE_RANGE=(4 10 20)
-QUERY_DIM_RANGE=(16 64)
+TRUNC_DIM=(25 50)
+BATCHSIZE_RANGE=(10 4)
+QUERY_DIM_RANGE=(64)
+GLOBAL_COEFF_RANGE=(10)
+POOL_RANGE=(3)
 
 # Method
 METHOD_OPTIONS=("--stepbystep")
@@ -71,6 +74,12 @@ for QD in "${QUERY_DIM_RANGE[@]}"
 do
 for LAM in "${LAMBDA_RANGE[@]}"
 do
+for TD in "${TRUNC_DIM[@]}"
+do
+for IG in "${IMAG_ON[@]}"
+do
+for PP in "${PASS_PCA_OPTIONS[@]}"
+do
 
 CUDA_VISIBLE_DEVICES=${GPU_IDS[$IDX]} python $TRAINING_SCRIPT \
 --config_file $CONFIG_FILE \
@@ -90,18 +99,24 @@ CUDA_VISIBLE_DEVICES=${GPU_IDS[$IDX]} python $TRAINING_SCRIPT \
 --lam $LAM \
 --prompt_weights $PW \
 --penalty_scaler $PS \
+--trunc_dim $TD \
+$IG \
 $M \
 $AF \
 $SO \
 $GLONORM \
 $PENALTY \
 $WPP \
+$PP \
 $HD &
 
 IDX=$(( ($IDX + 1) % ${#GPU_IDS[@]} ))
 if [ $IDX -eq 0 ]; then
 wait
 fi
+done
+done
+done
 done
 done
 done

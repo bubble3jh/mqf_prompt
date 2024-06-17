@@ -139,7 +139,7 @@ class PPGEmbeddingGenerator(nn.Module):
 
         # Generate PCA after FFT embedding
         pca_emb = self.pca_transform(fft_emb, pca_matrix, pca_mean)
-        
+
         # Generate Wavelet embedding
         wavelet_emb = self.wavelet_transform(ppg)
 
@@ -175,6 +175,12 @@ class L2Prompt_stepbystep(nn.Module):
 
         # Query
         self.pca_proj = nn.Linear(config.pca_dim, config.query_dim, bias=False)
+
+        if config.pass_pca:
+            self.fft_proj = nn.Linear(config.trunc_dim, config.query_dim, bias=False)
+            self.norm = nn.InstanceNorm1d(num_features=1, affine=True)
+            # self.norm = nn.BatchNorm1d(num_features=1)
+
         self.ppg_embedding_generator = PPGEmbeddingGenerator(self.config.query_dim, trunc_length=self.trunc_dim)
         
         # Key
@@ -192,13 +198,19 @@ class L2Prompt_stepbystep(nn.Module):
         dim = x['ppg'].shape[-1]
 
         # pca_emb: FFT=>PCA (Batch, PCA_DIM)
-        pca_emb, _, _ = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean)
+        pca_emb, fft_emb, _ = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean)
 
         if len(pca_emb.shape) == 1:
             pca_emb = pca_emb.unsqueeze(0)
 
-        query = self.pca_proj(pca_emb) # Batch, D_q
-        query = query.unsqueeze(1)
+        if not self.config.pass_pca:
+            query = self.pca_proj(pca_emb) # Batch, D_q
+            query = query.unsqueeze(1)
+        elif self.config.pass_pca:
+            query = fft_emb.unsqueeze(1)
+            query = self.norm(query)
+            query = self.fft_proj(query)
+            # query = query.unsqueeze(1)
 
         d_k = query.size(-1)
         qk = torch.einsum('bid,pid->bip', query, self.keys) / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
