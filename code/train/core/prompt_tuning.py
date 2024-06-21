@@ -192,25 +192,6 @@ class L2Prompt_stepbystep(nn.Module):
         if config.add_freq:
             self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.trunc_dim*2 if config.train_imag else self.trunc_dim))
         nn.init.uniform_(self.prompts,-1,1)
-
-        # Hidden prompt
-        self.hidden_propmts_size = self.get_hidden_prompts()
-        
-        self.hidden_prompts = []
-        if not self.config.add_prompts == 'None':
-            if self.config.add_prompts == 'final':
-                self.hidden_propmts = self.hidden_propmts[-1] #[[D,C],[D,C],[D,C],[D,C]]
-            for d,c in self.hidden_propmts:
-
-                self.prompts = nn.Parameter(torch.randn(1, d.item(), c.item()))
-                
-    def get_hidden_prompts(self):
-        import yaml
-        with open('./core/config/emb_dim_size.yaml', 'r') as file:
-            config = yaml.safe_load(file)
-
-        hidden_size = torch.tensor([[config[f'{self.config.transfer}'][i]['D'], config[f'{self.config.transfer}'][i]['C']] for i in config[f'{self.config.transfer}'].keys()])
-        return hidden_size
     
     def forward(self, x, group_labels, pca_matrix, pca_mean):
         bs = x['ppg'].shape[0]
@@ -285,7 +266,7 @@ class L2Prompt_stepbystep(nn.Module):
                 wandb.log({f'FFT/diff': wandb.Histogram((prompted_signal - x['ppg']).detach().cpu().numpy())})
 
         sim_loss, entropy_penalty = 0,0
-        return prompted_signal, sim_loss, entropy_penalty, self.hidden_prompts
+        return prompted_signal, sim_loss, entropy_penalty
 
 class L2Prompt(nn.Module):
     def __init__(self, config, model_config, x_min, x_max):
@@ -412,7 +393,7 @@ class L2Prompt(nn.Module):
             wandb.log({f'Propmts/gradient': wandb.Histogram(self.prompts.grad.cpu().numpy())})
             wandb.log({f'key/gradient': wandb.Histogram(self.keys.grad.cpu().numpy())})
 
-        return prompted_signal, sim_loss, entropy_penalty, hidden_prompts
+        return prompted_signal, sim_loss, entropy_penalty
 
 class Custom_model(pl.LightningModule):
     def __init__(self, model, data_shape, model_config, config, stats, fold):
@@ -455,9 +436,9 @@ class Custom_model(pl.LightningModule):
     def _shared_step(self, batch, mode):
         x_ppg, y, group, x_abp, peakmask, vlymask = batch
         if (self.pca_matrix == None) & (self.step_mode=="val"):
-            merged, sim_loss, entropy_penalty, hidden_prompts = self.prompt_learner_glo(x_ppg, group, self.sanity_pca_matrix, self.sanity_val_mean)
+            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.sanity_pca_matrix, self.sanity_val_mean)
         else:
-            merged, sim_loss, entropy_penalty, hidden_prompts = self.prompt_learner_glo(x_ppg, group, self.pca_matrix, self.pca_train_mean)
+            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.pca_matrix, self.pca_train_mean)
         
         if self.config.normalize:
             merged = normalizer(x_ppg["ppg"], merged)
@@ -471,13 +452,9 @@ class Custom_model(pl.LightningModule):
 
         # torch.save(merged, "merged_1.pt")
         # pred = self.res_model(merged)
-        if not self.config.input_prompting:
-            merged = x_ppg['ppg']
 
-        if self.config.add_prompts == "every":
-            pred = self.res_model.forward_w_add_prompts(merged, hidden_prompts, 'every')
-        elif self.config.add_prompts == 'final':
-            pred = self.res_model.forward_w_add_prompts(merged, hidden_prompts, 'final')
+        if self.config.add_prompts == "every" or self.config.add_prompts == 'final':
+            pred = self.res_model.model.forward_w_add_prompts(merged)
         else:
             pred = self.res_model(merged)
 
@@ -597,5 +574,11 @@ class Custom_model(pl.LightningModule):
     
     def configure_optimizers(self):
         optimizer = torch.optim.Adam([
-            {'params': self.prompt_learner_glo.parameters(), 'lr': self.config.lr, 'weight_decay': self.config.wd},])
+            {'params': self.prompt_learner_glo.parameters(), 'lr': self.config.lr, 'weight_decay': self.config.wd},
+            {'params': self.res_model.parameters(), 'lr': self.config.lr, 'weight_decay': self.config.wd}
+        ])
+        # optimizer = torch.optim.Adam([
+        #     {'params': self.prompt_learner_glo.parameters(), 'lr': self.config.lr, 'weight_decay': self.config.wd},
+        #     {'params': self.res_model.parameters(), 'lr': self.config.lr, 'weight_decay': self.config.wd}
+        # ])
         return optimizer

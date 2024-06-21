@@ -68,7 +68,7 @@ class SolverS2l(Solver):
                         model.param_model.wd = self.config.param_model.wd
                         model.param_model.batch_size = self.config.param_model.batch_size
                 else:
-                    model = Resnet1d.load_from_checkpoint(f"pretrained_models/{backbone_name}/fold{fold}.ckpt")
+                    model = Resnet1d.load_from_checkpoint(f"pretrained_models/{backbone_name}/fold{fold}.ckpt", strict=False)
                 # Initialize Classifier
                 if self.config.lp or self.config.reset_head:
                     model.model.main_clf = nn.Linear(in_features=model.model.main_clf.in_features,

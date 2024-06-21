@@ -7,7 +7,7 @@ from .resnet import MyConv1dPadSame, MyMaxPool1dPadSame, BasicBlock
 import coloredlogs, logging
 coloredlogs.install()
 logger = logging.getLogger(__name__)  
-
+import wandb
 
 class Resnet1d(Regressor):
     def __init__(self, param_model, random_state=0):
@@ -143,7 +143,7 @@ class ResNet1D(nn.Module):
     """
 
     def __init__(self, in_channels, base_filters, first_kernel_size, kernel_size, stride, 
-                        groups, n_block, output_size, is_se=False, se_ch_low=4, downsample_gap=2, 
+                        groups, n_block, output_size, config, is_se=False, se_ch_low=4, downsample_gap=2, 
                         increasefilter_gap=2, use_bn=True, use_do=True, verbose=False):
         super(ResNet1D, self).__init__()
         
@@ -214,6 +214,39 @@ class ResNet1D(nn.Module):
         # Classifier
         self.main_clf = nn.Linear(out_channels, output_size)
 
+        # Hidden prompt
+        self.add_prompts = wandb.config.add_prompts
+        self.transfer = wandb.config.transfer
+
+        self.hidden_prompts = []
+        self.hidden_prompts_size = self.get_hidden_prompts()
+        if not self.add_prompts == 'None':
+            if self.add_prompts == 'final':
+                self.hidden_prompts_size = self.hidden_prompts_size[-1] #[[D,C],[D,C],[D,C],[D,C]]
+            
+            # for d,c in self.hidden_prompts_size:
+            #     param = nn.Parameter(torch.randn(1, d.item(), c.item(), device='cuda'))
+            #     nn.init.uniform_(param, -1, 1)
+            #     self.hidden_prompts.append(param)
+            
+            for i, (d, c) in enumerate(self.hidden_prompts_size):
+                param_name = f'hidden_prompt_{i}'
+                param = nn.Parameter(torch.randn(1, d.item(), c.item(), device='cuda'))
+                nn.init.uniform_(param, -1, 1)
+                self.register_parameter(param_name, param)
+                self.hidden_prompts.append(param)
+
+        self.hidden_prompts_size = self.hidden_prompts_size[-1] #[[D,C],[D,C],[D,C],[D,C]]
+        
+
+    def get_hidden_prompts(self):
+        import yaml
+        with open('./core/config/emb_dim_size.yaml', 'r') as file:
+            config = yaml.safe_load(file)
+
+        hidden_size = torch.tensor([[config[f'{self.transfer}'][i]['D'], config[f'{self.transfer}'][i]['C']] for i in config[f'{self.transfer}'].keys()])
+        return hidden_size
+
     # def forward(self, x):
     def forward(self, x):
         #x = x['ppg']
@@ -253,7 +286,7 @@ class ResNet1D(nn.Module):
         out = self.main_clf(h)
         return out
     
-    def forward_w_add_prompts(self, x, prompts, where='final'):
+    def forward_w_add_prompts(self, x):
         #x = x['ppg']
         x = x
         if len(x.shape) != 3:
@@ -279,11 +312,11 @@ class ResNet1D(nn.Module):
                 logger.info('i_block: {0}, in_channels: {1}, out_channels: {2}, downsample: {3}'.format(i_block, net.in_channels, net.out_channels, net.downsample))
             out = net(out)
 
-            if where == 'every':
-                out += prompts[i_block]
+            if self.add_prompts == 'every':
+                out += self.hidden_prompts[i_block]
 
-            elif where == 'final' and i_block == self.n_block-1:
-                out += prompts[-1]
+            elif self.add_prompts == 'final' and i_block == self.n_block-1:
+                out += self.hidden_prompts[-1]
 
             if self.verbose:
                 logger.info(out.shape)
