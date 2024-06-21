@@ -192,6 +192,25 @@ class L2Prompt_stepbystep(nn.Module):
         if config.add_freq:
             self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.trunc_dim*2 if config.train_imag else self.trunc_dim))
         nn.init.uniform_(self.prompts,-1,1)
+
+        # Hidden prompt
+        self.hidden_propmts_size = self.get_hidden_prompts()
+        
+        self.hidden_prompts = []
+        if not self.config.add_prompts == 'None':
+            if self.config.add_prompts == 'final':
+                self.hidden_propmts = self.hidden_propmts[-1] #[[D,C],[D,C],[D,C],[D,C]]
+            for d,c in self.hidden_propmts:
+
+                self.prompts = nn.Parameter(torch.randn(1, d.item(), c.item()))
+                
+    def get_hidden_prompts(self):
+        import yaml
+        with open('./core/config/emb_dim_size.yaml', 'r') as file:
+            config = yaml.safe_load(file)
+
+        hidden_size = torch.tensor([[config[f'{self.config.transfer}'][i]['D'], config[f'{self.config.transfer}'][i]['C']] for i in config[f'{self.config.transfer}'].keys()])
+        return hidden_size
     
     def forward(self, x, group_labels, pca_matrix, pca_mean):
         bs = x['ppg'].shape[0]
@@ -266,7 +285,7 @@ class L2Prompt_stepbystep(nn.Module):
                 wandb.log({f'FFT/diff': wandb.Histogram((prompted_signal - x['ppg']).detach().cpu().numpy())})
 
         sim_loss, entropy_penalty = 0,0
-        return prompted_signal, sim_loss, entropy_penalty
+        return prompted_signal, sim_loss, entropy_penalty, self.hidden_prompts
 
 class L2Prompt(nn.Module):
     def __init__(self, config, model_config, x_min, x_max):
@@ -365,7 +384,7 @@ class L2Prompt(nn.Module):
 
         # Compute weighted sum of prompts
         final_prompt = (weights.unsqueeze(-1) * top1_prompts).sum(dim=1, keepdim=True)  # Shape: (batch_size, 1, prompt_dim)
-           
+        
         if self.config.glonorm:
             final_prompt = global_normalizer(final_prompt, self.x_min, self.x_max)
         
@@ -393,7 +412,7 @@ class L2Prompt(nn.Module):
             wandb.log({f'Propmts/gradient': wandb.Histogram(self.prompts.grad.cpu().numpy())})
             wandb.log({f'key/gradient': wandb.Histogram(self.keys.grad.cpu().numpy())})
 
-        return prompted_signal, sim_loss, entropy_penalty
+        return prompted_signal, sim_loss, entropy_penalty, hidden_prompts
 
 class Custom_model(pl.LightningModule):
     def __init__(self, model, data_shape, model_config, config, stats, fold):
@@ -427,22 +446,41 @@ class Custom_model(pl.LightningModule):
     def hook_fn(self, module, input, output):
         self.hidden_output = output
 
+    def embedding_loss(self, h, group):
+        self.source_emb = torch.load(f'./embeds_mean/{self.config.transfer}_mean_embeddings.pt', map_location=self.res_model.device)
+        h_source = self.source_emb[group]
+        diff_loss = torch.norm(h-h_source, dim=1).mean()
+        return diff_loss
+
     def _shared_step(self, batch, mode):
         x_ppg, y, group, x_abp, peakmask, vlymask = batch
         if (self.pca_matrix == None) & (self.step_mode=="val"):
-            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.sanity_pca_matrix, self.sanity_val_mean)
+            merged, sim_loss, entropy_penalty, hidden_prompts = self.prompt_learner_glo(x_ppg, group, self.sanity_pca_matrix, self.sanity_val_mean)
         else:
-            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.pca_matrix, self.pca_train_mean)
+            merged, sim_loss, entropy_penalty, hidden_prompts = self.prompt_learner_glo(x_ppg, group, self.pca_matrix, self.pca_train_mean)
         
-
         if self.config.normalize:
             merged = normalizer(x_ppg["ppg"], merged)
         if self.config.clip:
             merged = torch.clamp(merged, min= self.ppg_min,max=self.ppg_max)
         
+        hidden_emb = self.res_model.extract_penultimate_embedding(merged)
+
+        # hidden_emb + prompt 를 resnet penltimate layer에 삽입 (교체)
+        # pred = self.res_model.main_clf(hidden_emb + penulit_emb_prompt)
+
         # torch.save(merged, "merged_1.pt")
-        pred = self.res_model(merged)
-               
+        # pred = self.res_model(merged)
+        if not self.config.input_prompting:
+            merged = x_ppg['ppg']
+
+        if self.config.add_prompts == "every":
+            pred = self.res_model.forward_w_add_prompts(merged, hidden_prompts, 'every')
+        elif self.config.add_prompts == 'final':
+            pred = self.res_model.forward_w_add_prompts(merged, hidden_prompts, 'final')
+        else:
+            pred = self.res_model(merged)
+
         if self.config.group_avg:
             raise ValueError("We do not use group loss")
             losses = self.criterion(pred, y)
@@ -456,18 +494,22 @@ class Custom_model(pl.LightningModule):
 
         else:
             loss = self.criterion(pred, y)
+            emb_diff_loss = self.embedding_loss(hidden_emb, group)
             if not self.config.ignore_wandb:
                 wandb.log(
                     {f'Fold{self.fold}/{mode}_reg_loss':loss,
                         f'Fold{self.fold}/{mode}_qk_sim_loss':sim_loss,
                         f'Fold{self.fold}/{mode}_penalty_loss':entropy_penalty,
-                        f'Fold{self.fold}/{mode}_total_loss': loss + self.config.qk_sim_coeff*sim_loss + self.config.penalty_scaler*entropy_penalty,
+                        f'Fold{self.fold}/{mode}_total_loss': loss + self.config.qk_sim_coeff*sim_loss + self.config.penalty_scaler*entropy_penalty + self.config.diff_loss_weight * emb_diff_loss,
+                        f'Fold{self.fold}/{mode}_emb_diff_loss': emb_diff_loss,
                         'epoch': self.current_epoch}
                         )
             if self.config.method == "prompt_global":
                 loss = loss + self.config.qk_sim_coeff*sim_loss #- entropy
                 if self.config.penalty:
                     loss = loss + self.config.penalty_scaler*entropy_penalty
+                if self.config.use_emb_diff:
+                    loss = loss + self.config.diff_loss_weight * emb_diff_loss
             
             return loss, pred, x_abp, y, group
         

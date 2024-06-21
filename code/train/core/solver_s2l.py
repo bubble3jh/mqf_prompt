@@ -283,7 +283,7 @@ class SolverS2l(Solver):
                 trainer.save_checkpoint(ckpt_path_abs)
 
                 # clear redundant mlflow models (save disk space)
-                redundant_model_path = Path(artifact_uri)/'model'
+                redundant_model_path = Path(artifact_uri)/'restored_model_checkpoint'
                 if redundant_model_path.exists(): rmtree(redundant_model_path)
 
                 metrics = self.get_cv_metrics(fold_errors, dm, model, val_outputs, mode="val")
@@ -291,13 +291,13 @@ class SolverS2l(Solver):
                 logger.info(f"\t {metrics}")
                 mf.log_metrics(metrics)
             #--- Save to model directoryn
-            os.makedirs(self.config.path.model_directory, exist_ok=True)
-            trainer.save_checkpoint("{}/{}-fold{}-test_sp={:.3f}-test_dp={:.3f}.ckpt".format(
-                                                                           self.config.path.model_directory,
-                                                                           self.config.exp.exp_name,
-                                                                           foldIdx,
-                                                                           metrics["test/sbp_mae"],
-                                                                           metrics["test/dbp_mae"]))
+            # os.makedirs(self.config.path.model_directory, exist_ok=True)
+            # trainer.save_checkpoint("{}/{}-fold{}-test_sp={:.3f}-test_dp={:.3f}.ckpt".format(
+            #                                                                self.config.path.model_directory,
+            #                                                                self.config.exp.exp_name,
+            #                                                                foldIdx,
+            #                                                                metrics["test/sbp_mae"],
+            #                                                                metrics["test/dbp_mae"]))
             # trainer.save_checkpoint("{}/{}-fold{}-original-seed{}.ckpt".format(
             #     self.config.path.model_directory,
             #     self.config.exp.exp_name,

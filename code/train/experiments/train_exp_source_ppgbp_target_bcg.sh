@@ -28,13 +28,15 @@ PROMPT_WEIGHTS_OPTIONS=("learnable")
 PASS_PCA_OPTIONS=("" "--pass_pca")
 HEAD_OPTIONS=("") # '--train_head' '--train_head --reset_head')
 IMAG_ON=("" "--train_imag")
-LR_RANGE=(1e-1 1e-2 1e-3)
+LR_RANGE=(1e-1 1e-2 1e-3 1e-4)
 WD_RANGE=(1e-1 1e-2 1e-3)
 TRUNC_DIM=(25 50)
-BATCHSIZE_RANGE=(10 4)
+BATCHSIZE_RANGE=(10)
 QUERY_DIM_RANGE=(64)
 GLOBAL_COEFF_RANGE=(10)
-POOL_RANGE=(3)
+POOL_RANGE=(4)
+EMB_DIFF_OPTIONS=('--use_emb_diff')
+DIFF_LOSS_WEIGHT_RANGE=(1.0)
 
 # Method
 METHOD_OPTIONS=("--stepbystep")
@@ -80,6 +82,10 @@ for IG in "${IMAG_ON[@]}"
 do
 for PP in "${PASS_PCA_OPTIONS[@]}"
 do
+for ED in "${EMB_DIFF_OPTIONS[@]}"
+do
+for DLW in "${DIFF_LOSS_WEIGHT_RANGE[@]}"
+do
 
 CUDA_VISIBLE_DEVICES=${GPU_IDS[$IDX]} python $TRAINING_SCRIPT \
 --config_file $CONFIG_FILE \
@@ -100,6 +106,8 @@ CUDA_VISIBLE_DEVICES=${GPU_IDS[$IDX]} python $TRAINING_SCRIPT \
 --prompt_weights $PW \
 --penalty_scaler $PS \
 --trunc_dim $TD \
+--diff_loss_weight $DLW \
+$ED \
 $IG \
 $M \
 $AF \
@@ -114,6 +122,8 @@ IDX=$(( ($IDX + 1) % ${#GPU_IDS[@]} ))
 if [ $IDX -eq 0 ]; then
 wait
 fi
+done
+done
 done
 done
 done

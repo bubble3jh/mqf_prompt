@@ -22,6 +22,20 @@ class Resnet1d(Regressor):
         pred = self.model(x_ppg)
         loss = self.criterion(pred, y)
         return loss, pred, x_abp, y
+    
+    def extract_penultimate_embedding(self, x_ppg):
+        x = x_ppg
+        for name, layer in self.model.named_children():
+            if name == 'main_clf':
+                break
+            if isinstance(layer, nn.ModuleList):
+                for sublayer in layer:
+                    x = sublayer(x)
+            else:
+                x = layer(x)
+        # x is now the output of the penultimate layer
+        penultimate_embedding = x.mean(-1)
+        return penultimate_embedding
 
     def training_step(self, batch, batch_idx):
         loss, pred_bp, t_abp, label = self._shared_step(batch)
@@ -58,6 +72,52 @@ class Resnet1d(Regressor):
         self._log_metric(metrics, mode="test")
         return test_step_end_out
     
+    # def forward_w_add_prompts(self, x, prompts, where='final'):
+    #     embeddings = []
+        
+    #     # Initial block operations
+    #     x = self.model.first_block_conv(x)
+    #     x = self.model.first_block_bn(x)
+    #     x = self.model.first_block_relu(x)
+    #     x = self.model.first_block_maxpool(x)
+        
+    #     # Iterating over each BasicBlock in the basicblock_list
+    #     for i, block in enumerate(self.model.basicblock_list):
+    #         # Pass input through the block up to the SE_Block
+    #         residual = x
+    #         x = block.bn1(x)
+    #         x = block.relu1(x)
+    #         x = block.do1(x)
+    #         x = block.conv1(x)
+    #         x = block.bn2(x)
+    #         x = block.relu2(x)
+    #         x = block.do2(x)
+    #         x = block.conv2(x)
+            
+    #         # If the block has a downsample, apply it on the residual
+    #         if hasattr(block, 'downsample') and block.downsample is not None:
+    #             residual = block.downsample(residual)
+            
+    #         x += residual
+    #         x = block.relu1(x)  # or use another ReLU if specified differently in your block
+            
+    #         # Extract embedding from SE_Block
+    #         se_output = block.se.squeeze(x)
+    #         se_output = block.se.excitation(se_output)
+            
+    #         if where == 'every':
+    #             se_output += prompts[i]
+
+    #         # embeddings.append(se_output)
+            
+    #     # Optional: continue through your model if there are more layers after BasicBlocks
+    #     x = self.model.final_bn(x)
+    #     x = self.model.final_relu(x)
+
+    #     x += prompts[-1] # add prompt to the last embedding
+    #     logits = self.model.main_clf(x)
+        
+    #     return logits
 
 #%%
 
@@ -192,6 +252,55 @@ class ResNet1D(nn.Module):
         # ===== Concat x_demo
         out = self.main_clf(h)
         return out
+    
+    def forward_w_add_prompts(self, x, prompts, where='final'):
+        #x = x['ppg']
+        x = x
+        if len(x.shape) != 3:
+            assert len(x.shape) == 3
+
+        # skip batch norm if batchsize<4:
+        if x.shape[0]<4:    self.use_bn = False 
+        # first conv
+        if self.verbose:
+            logger.info('input shape', x.shape)
+        out = self.first_block_conv(x)
+        if self.verbose:
+            logger.info('after first conv', out.shape)
+        if self.use_bn:
+            out = self.first_block_bn(out)
+        out = self.first_block_relu(out)
+        out = self.first_block_maxpool(out)
+        
+        # residual blocks, every block has two conv
+        for i_block in range(self.n_block):
+            net = self.basicblock_list[i_block]
+            if self.verbose:
+                logger.info('i_block: {0}, in_channels: {1}, out_channels: {2}, downsample: {3}'.format(i_block, net.in_channels, net.out_channels, net.downsample))
+            out = net(out)
+
+            if where == 'every':
+                out += prompts[i_block]
+
+            elif where == 'final' and i_block == self.n_block-1:
+                out += prompts[-1]
+
+            if self.verbose:
+                logger.info(out.shape)
+
+        # final prediction
+        if self.use_bn:
+            out = self.final_bn(out)
+        h = self.final_relu(out)
+        h = h.mean(-1) # (n_batch, out_channels)
+        # logger.info('final pooling', h.shape)
+        # ===== Concat x_demo
+        # if where == 'every' or where == 'final':
+        #     h += prompts[-1]
+        
+        out = self.main_clf(h)
+        return out
+        
 
 def init_weights(m):
     classname = m.__class__.__name__
