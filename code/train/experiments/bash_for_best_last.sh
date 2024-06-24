@@ -1,0 +1,16 @@
+#!/bin/bash
+cd ..
+
+seeds=(0 1 2 3 4)
+
+for seed in "${seeds[@]}"
+do
+CUDA_VISIBLE_DEVICES=1 python train.py --seed=$seed --add_freq=true --batch_size=2 --clip=true --config_file=core/config/dl/resnet/resnet_bcg.yaml --diff_loss_weight=0.585118384487913 --epochs=10 --global_coeff=1.3281390803813196 --lr=0.007 --method=prompt_global --normalize=false --num_pool=8 --pass_pca=true --pca_dim=31 --query_dim=512 --reset_head=false --shots=5 --stepbystep=true --target=bcg --train_head=true --train_imag=true --transfer=ppgbp --trunc_dim=75 --use_emb_diff=true --wd=0.009 &
+CUDA_VISIBLE_DEVICES=2 python train.py --seed=$seed --add_freq=true --batch_size=3 --clip=true --config_file=core/config/dl/resnet/resnet_bcg.yaml --diff_loss_weight=0.6494554841301075 --epochs=10 --global_coeff=2.0190462345884184 --lr=0.008 --method=prompt_global --normalize=false --num_pool=3 --pass_pca=true --pca_dim=14 --query_dim=128 --reset_head=false --shots=5 --stepbystep=true --target=bcg --train_head=true --train_imag=true --transfer=sensors --trunc_dim=30 --use_emb_diff=true --wd=0.02 &
+CUDA_VISIBLE_DEVICES=3 python train.py --seed=$seed --add_freq=true --batch_size=5 --clip=true --config_file=core/config/dl/resnet/resnet_ppgbp.yaml --diff_loss_weight=0.372309268088032 --epochs=10 --global_coeff=0.968285910327247 --lr=0.01 --method=prompt_global --normalize=true --num_pool=16 --pass_pca=true --pca_dim=10 --query_dim=64 --reset_head=false --shots=5 --stepbystep=true --target=ppgbp --train_head=true --train_imag=true --transfer=bcg --trunc_dim=60 --use_emb_diff=false --wd=0.02 &
+CUDA_VISIBLE_DEVICES=4 python train.py --seed=$seed --add_freq=true --batch_size=3 --clip=true --config_file=core/config/dl/resnet/resnet_ppgbp.yaml --diff_loss_weight=2.7705781033576966 --epochs=10 --global_coeff=2.994304022727923 --lr=0.008 --method=prompt_global --normalize=false --num_pool=4 --pass_pca=false --pca_dim=27 --query_dim=64 --reset_head=true --shots=5 --stepbystep=true --target=ppgbp --train_head=true --train_imag=true --transfer=sensors --trunc_dim=34 --use_emb_diff=true --wd=0.07 &
+CUDA_VISIBLE_DEVICES=5 python train.py --seed=$seed --add_freq=true --batch_size=9 --clip=true --config_file=core/config/dl/resnet/resnet_sensors.yaml --diff_loss_weight=4.528796442647726 --epochs=10 --global_coeff=0.5319112062185848 --lr=0.009 --method=prompt_global --normalize=true --num_pool=8 --pass_pca=false --pca_dim=18 --query_dim=256 --reset_head=false --shots=5 --stepbystep=true --target=sensors --train_head=true --train_imag=false --transfer=bcg --trunc_dim=72 --use_emb_diff=false --wd=0.07 &
+CUDA_VISIBLE_DEVICES=6 python train.py --seed=$seed --add_freq=true --batch_size=2 --clip=true --config_file=core/config/dl/resnet/resnet_sensors.yaml --diff_loss_weight=1.030376791375574 --epochs=10 --global_coeff=6.357306567305021 --lr=0.008 --method=prompt_global --normalize=false --num_pool=15 --pass_pca=false --pca_dim=24 --query_dim=16 --reset_head=true --shots=5 --stepbystep=true --target=sensors --train_head=true --train_imag=true --transfer=ppgbp --trunc_dim=69 --use_emb_diff=true --wd=0.07 &
+
+wait
+done

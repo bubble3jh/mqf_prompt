@@ -1,0 +1,110 @@
+program: train.py
+method: bayes
+metric:
+  goal: minimize
+  name: gal
+parameters:
+  transfer:
+    values:
+      - sensors
+    distribution: categorical
+  target:
+    values:
+      - ppgbp
+    distribution: categorical
+  config_file:
+    values:
+      - core/config/dl/resnet/resnet_ppgbp.yaml
+    distribution: categorical
+  method:
+    values:
+      - prompt_global
+    distribution: categorical
+  global_coeff:
+    max: 2
+    min: -1
+    distribution: log_uniform
+  train_imag:
+    values:
+      - "true"
+      - "false"
+    distribution: categorical
+  train_head:
+    values:
+      - "true"
+    distribution: categorical
+  reset_head:
+    values:
+      - "true"
+      - "false"
+    distribution: categorical
+  stepbystep:
+    values:
+      - "true"
+    distribution: categorical
+  batch_size:
+    max: 20
+    min: 2
+    distribution: int_uniform
+  trunc_dim:
+    max: 75
+    min: 25
+    distribution: int_uniform
+  query_dim:
+    values: [8, 16, 32, 64, 128, 256, 512]
+  normalize:
+    values:
+      - "true"
+      - "false"
+    distribution: categorical
+  pass_pca:
+    values:
+      - "true"
+      - "false"
+    distribution: categorical
+  num_pool:
+    max: 20
+    min: 1
+    distribution: int_uniform
+  add_freq:
+    values:
+      - "true"
+    distribution: categorical
+  pca_dim:
+    max: 32
+    min: 4
+    distribution: int_uniform
+  epochs:
+    values:
+      - 10
+    distribution: categorical
+  shots:
+    values:
+      - 5
+    distribution: categorical
+  clip:
+    values:
+      - "true"
+    distribution: categorical
+  use_emb_diff:
+    values:
+      - "true"
+      - "false"
+    distribution: categorical
+  diff_loss_weight:
+    max: 2
+    min: -1
+    distribution: log_uniform
+  lr:
+    max: -1
+    min: -5
+    distribution: log_uniform
+  wd:
+    max: -1
+    min: -5
+    distribution: log_uniform
+early_terminate:
+  type: hyperband
+  s: 4
+  eta: 3
+  max_iter: 100

@@ -1,0 +1,194 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    python_version: 3.9.19
+    cli_version: 0.17.0
+    framework: lightgbm
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1718941084
+    t:
+      1:
+      - 1
+      - 5
+      - 8
+      - 9
+      - 50
+      - 53
+      - 55
+      2:
+      - 1
+      - 5
+      - 8
+      - 9
+      - 50
+      - 53
+      - 55
+      3:
+      - 3
+      - 17
+      - 23
+      - 37
+      4: 3.9.19
+      5: 0.17.0
+      8:
+      - 5
+      13: linux-x86_64
+config_file:
+  desc: null
+  value: core/config/dl/resnet/resnet_bcg.yaml
+lr:
+  desc: null
+  value: 0.25979178258713065
+wd:
+  desc: null
+  value: 0.18075489304577755
+global_coeff:
+  desc: null
+  value: 2.0639206539593893
+gen_coeff:
+  desc: null
+  value: 1.0
+method:
+  desc: null
+  value: prompt_global
+root_dir:
+  desc: null
+  value: ./
+result_dirname:
+  desc: null
+  value: results
+layer_num:
+  desc: null
+  value: 0
+glonorm:
+  desc: null
+  value: false
+seed:
+  desc: null
+  value: 0
+group_avg:
+  desc: null
+  value: false
+penalty:
+  desc: null
+  value: false
+k:
+  desc: null
+  value: 1
+num_pool:
+  desc: null
+  value: 20
+mul:
+  desc: null
+  value: false
+fixed_key:
+  desc: null
+  value: false
+fixed_prompt:
+  desc: null
+  value: false
+trans:
+  desc: null
+  value: false
+ignore_wandb:
+  desc: null
+  value: false
+count_group:
+  desc: null
+  value: false
+data_root:
+  desc: null
+  value: /bp_benchmark/datasets/ETRI_2023/results
+use_group:
+  desc: null
+  value: false
+backbone:
+  desc: null
+  value: resnet1d
+shots:
+  desc: null
+  value: 5
+transfer:
+  desc: null
+  value: sensors
+target:
+  desc: null
+  value: bcg
+prompt_weights:
+  desc: null
+  value: learnable
+penalty_scaler:
+  desc: null
+  value: 0.1
+qk_sim_coeff:
+  desc: null
+  value: 0.5
+pca_dim:
+  desc: null
+  value: 7
+query_dim:
+  desc: null
+  value: 64
+batch_size:
+  desc: null
+  value: 3
+weight_per_prompt:
+  desc: null
+  value: false
+lp:
+  desc: null
+  value: false
+scratch:
+  desc: null
+  value: false
+use_pt_emb:
+  desc: null
+  value: false
+instance:
+  desc: null
+  value: false
+trunc_dim:
+  desc: null
+  value: 38
+epochs:
+  desc: null
+  value: 10
+num_patience:
+  desc: null
+  value: 100
+lam:
+  desc: null
+  value: 1.0
+diff_loss_weight:
+  desc: null
+  value: 6.937869157825512
+normalize:
+  desc: null
+  value: true
+clip:
+  desc: null
+  value: true
+train_head:
+  desc: null
+  value: true
+reset_head:
+  desc: null
+  value: false
+stepbystep:
+  desc: null
+  value: true
+add_freq:
+  desc: null
+  value: true
+train_imag:
+  desc: null
+  value: true
+pass_pca:
+  desc: null
+  value: true
+use_emb_diff:
+  desc: null
+  value: false
