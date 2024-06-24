@@ -125,7 +125,6 @@ class PPGEmbeddingGenerator(nn.Module):
     def gen_ppg_emb(self, ppg, groups, pca_matrix, pca_mean):
         # Ensure the input data is in the correct shape
         assert len(ppg.shape) == 3 and ppg.shape[1] == 1, "PPG data should be in shape [batch_size, 1, seq_len]"
-        
         device = ppg.device  # Get the device of the input PPG data
         
         # Generate Group embedding
@@ -142,8 +141,11 @@ class PPGEmbeddingGenerator(nn.Module):
 
         # Generate Wavelet embedding
         wavelet_emb = self.wavelet_transform(ppg)
+        
+        # Generate Pretrained model embedding
+        pt_emb = res_model.extract_penultimate_embedding(ppg).squeeze()
 
-        return pca_emb, fft_emb, wavelet_emb
+        return pca_emb, fft_emb, wavelet_emb, pt_emb
     
 class L2Prompt_INS(nn.Module):
     def __init__(self, config, model_config, x_min, x_max):
@@ -284,10 +286,13 @@ class L2Prompt(nn.Module):
         # Projection Matrix for feature querys
         self.pca_proj = nn.Linear(config.pca_dim, config.query_dim, bias=False)
         self.fft_proj = nn.Linear(model_config["data_dim"]//2 + 1, config.query_dim, bias=False)
-        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], config.query_dim, bias=False)    
+        self.wavelet_proj = nn.Linear(model_config["wavelet_dim"], config.query_dim, bias=False)
+        if config.use_pt_emb:
+            self.pt_proj = nn.Linear(config.pt_dim, config.query_dim, bias=False)    
         
         # Initialize learnable parameters for keys and prompts
-        self.keys = nn.Parameter(torch.randn(self.num_pool, 3 if not config.use_group else 4, self.config.query_dim))
+        num_kq = 4 if config.use_pt_emb else 3
+        self.keys = nn.Parameter(torch.randn(self.num_pool, num_kq, self.config.query_dim))
         nn.init.uniform_(self.keys,-1,1)
 
         self.prompts = nn.Parameter(torch.randn(self.num_pool, 1, self.model_config["data_dim"]))
@@ -296,9 +301,9 @@ class L2Prompt(nn.Module):
         # Initialize learnable weights
         self.weight_per_prompt = config.weight_per_prompt
         if self.weight_per_prompt:
-            self.learnable_weights = nn.Parameter(self._initialize_weights(3 if not config.use_group else 4, self.num_pool))
+            self.learnable_weights = nn.Parameter(self._initialize_weights(num_kq, self.num_pool))
         else:
-            self.learnable_weights = nn.Parameter(self._initialize_weights(3 if not config.use_group else 4))
+            self.learnable_weights = nn.Parameter(self._initialize_weights(num_kq))
         
         # if self.config.prompt_weights == 'attention':
         #     self.attention = torch.nn.MultiheadAttention(embed_dim=self.model_config["data_dim"], num_heads=2)
@@ -313,29 +318,36 @@ class L2Prompt(nn.Module):
             weights = weights.squeeze()
         return weights
     
-    def forward(self, x, group_labels, pca_matrix, pca_mean):
+    def forward(self, x, group_labels, pca_matrix, pca_mean, res_model):
         bz = x['ppg'].shape[0]
         
         # Generate PPG embeddings
-        pca_emb, fft_emb, wavelet_emb = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean)
-
+        pca_emb, fft_emb, wavelet_emb, pt_emb = self.ppg_embedding_generator.gen_ppg_emb(x['ppg'], group_labels, pca_matrix, pca_mean, res_model)
+        
         if len(pca_emb.shape) == 1:
             pca_emb = pca_emb.unsqueeze(0)
         if len(fft_emb.shape) == 1:
             fft_emb = fft_emb.unsqueeze(0)
         if len(wavelet_emb.shape) == 1:
             wavelet_emb = wavelet_emb.unsqueeze(0)
+        if self.config.use_pt_emb:
+            if len(pt_emb.shape) == 1:
+                pt_emb = pt_emb.unsqueeze(0)
 
-        # Project each feature to 64 dimensions
+        # Project each feature to same dimensions
         pca_emb = self.pca_proj(pca_emb)
         fft_emb = self.fft_proj(fft_emb)
         wavelet_emb = self.wavelet_proj(wavelet_emb)
+        emb_list = [pca_emb, fft_emb, wavelet_emb]
 
-        # Concatenate the projected features to form the query
-        queries = torch.stack([pca_emb, fft_emb, wavelet_emb], dim=1)
+        # Optionally add pt_emb if use_pt_emb is True
+        if self.config.use_pt_emb:
+            pt_emb = self.pt_proj(pt_emb)
+            emb_list.append(pt_emb)
+
+        queries = torch.stack(emb_list, dim=1)
         
         d_k = queries.size(-1)  # query의 마지막 차원의 크기
-        
         cos_sim = torch.einsum('bqd,nqd->bqn', queries, self.keys) / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
 
         gumbel_sample = F.gumbel_softmax(cos_sim, tau=1.0, hard=True)
@@ -389,10 +401,11 @@ class L2Prompt(nn.Module):
         # entropy_penalty = -entropy  # Negative to minimize entropy
         entropy_penalty = 0
         
-        if self.prompts.grad is not None:
-            wandb.log({f'Propmts/gradient': wandb.Histogram(self.prompts.grad.cpu().numpy())})
-            wandb.log({f'key/gradient': wandb.Histogram(self.keys.grad.cpu().numpy())})
-
+        if not self.config.ignore_wandb:
+            if self.prompts.grad is not None:
+                wandb.log({f'Propmts/gradient': wandb.Histogram(self.prompts.grad.cpu().numpy())})
+                wandb.log({f'key/gradient': wandb.Histogram(self.keys.grad.cpu().numpy())})
+        
         return prompted_signal, sim_loss, entropy_penalty
 
 class Custom_model(pl.LightningModule):
@@ -436,7 +449,7 @@ class Custom_model(pl.LightningModule):
     def _shared_step(self, batch, mode):
         x_ppg, y, group, x_abp, peakmask, vlymask = batch
         if (self.pca_matrix == None) & (self.step_mode=="val"):
-            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.sanity_pca_matrix, self.sanity_val_mean)
+            merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.sanity_pca_matrix, self.sanity_val_mean, self.res_model)
         else:
             merged, sim_loss, entropy_penalty = self.prompt_learner_glo(x_ppg, group, self.pca_matrix, self.pca_train_mean)
         

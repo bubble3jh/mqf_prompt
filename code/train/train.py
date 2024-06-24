@@ -174,8 +174,14 @@ def main(args):
     config.param_model.batch_size=args.batch_size
     config.param_early_stop.patience=config.num_patience # 100
     config.exp.N_fold=5
+    if config.transfer == 'bcg':
+        config.pt_dim = 256
+    elif config.transfer == 'ppgbp':
+        config.pt_dim = 320
+    elif config.transfer == 'sensors':
+        config.pt_dim = 512
 
-    print(config)
+    # print(config)
 
     #--- get the solver
     if config.exp.model_type in ['unet1d', 'ppgiabp', 'vnet']:
