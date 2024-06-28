@@ -64,7 +64,7 @@ parameters:
     distribution: categorical
   num_pool:
     max: 20
-    min: 1
+    min: 2
     distribution: int_uniform
   add_freq:
     values:

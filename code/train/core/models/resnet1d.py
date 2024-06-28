@@ -121,6 +121,154 @@ class Resnet1d(Regressor):
 
 #%%
 
+class PenultimateLayerPrompt(nn.Module):
+    def __init__(self):
+        super(PenultimateLayerPrompt, self).__init__()
+        
+        self.add_prompts = wandb.config.add_prompts
+        self.num_pool = wandb.config.num_pool
+        self.transfer = wandb.config.transfer
+        self.target = wandb.config.target
+        self.pen_prompt_coeff = wandb.config.pen_prompt_coeff
+        self.query_dim = wandb.config.query_dim
+
+        self.hidden_prompts_size = self.get_hidden_prompts()
+        last_block_idx = len(self.hidden_prompts_size)-1
+        if not self.add_prompts == 'None':
+            if self.add_prompts == 'final':
+                self.hidden_prompts_size = [self.hidden_prompts_size[-1]] #[[D,C],[D,C],[D,C],[D,C]]
+                for i, (d, c) in enumerate(self.hidden_prompts_size):
+                    param_name = f'hidden_prompt_{i}'
+                    self.prompts = nn.Parameter(torch.randn(self.num_pool, d.item(), device='cuda'))
+                    nn.init.uniform(self.prompts, -1, 1)
+                    self.register_parameter(param_name, self.prompts)
+
+                # Query projection layer
+                self.d = self.hidden_prompts_size[-1][0]
+                self.w_q = nn.Linear(self.d.item(), self.query_dim, bias=False)
+
+                self.keys = nn.Parameter(torch.randn(self.num_pool, self.query_dim))
+                nn.init.uniform(self.keys,-1,1)
+
+            elif self.add_prompts == 'every':                
+                for i, (d, c) in enumerate(self.hidden_prompts_size):
+                    param_name = f'hidden_prompt_{i}'
+                    prompts = nn.Parameter(torch.randn(self.num_pool, d.item(), device='cuda'))
+                    nn.init.uniform(prompts, -1, 1)
+                    setattr(self, param_name, prompts)
+
+                    query_projection = nn.Conv1d(in_channels=c.item(),
+                                                out_channels=self.query_dim,
+                                                kernel_size=d.item(),
+                                                stride=1,
+                                                padding=0)
+                    setattr(self, f'block_{i}_query_projection', query_projection)
+
+                    keys = nn.Parameter(torch.randn(self.num_pool, self.query_dim))
+                    nn.init.uniform(keys, -1, 1)
+                    setattr(self, f'block_{i}_keys', keys)
+
+                prompts = nn.Parameter(torch.randn(self.num_pool, d.item(), device='cuda'))
+                nn.init.uniform(prompts, -1, 1)
+                setattr(self, f'hidden_prompt_{i+1}', prompts)
+
+                self.d = self.hidden_prompts_size[-1][0]
+                self.w_q = nn.Linear(self.d.item(), self.query_dim, bias=False)
+                setattr(self, f'block_{i+1}_query_projection', self.w_q)
+
+                keys = nn.Parameter(torch.randn(self.num_pool, self.query_dim))
+                nn.init.uniform(keys, -1, 1)
+                setattr(self, f'block_{i+1}_keys', keys)
+
+        self.initialize_parameters()
+
+    def initialize_parameters(self):
+        # 1. Xavier (Glorot) Initialization
+        def xavier_init(param):
+            if isinstance(param, nn.Parameter):
+                nn.init.xavier_uniform_(param.data)
+
+        # 2. Kaiming (He) Initialization
+        def kaiming_init(param):
+            if isinstance(param, nn.Parameter):
+                nn.init.kaiming_normal_(param.data, mode='fan_out', nonlinearity='relu')
+
+        # 3. Orthogonal Initialization
+        def orthogonal_init(param):
+            if isinstance(param, nn.Parameter):
+                nn.init.orthogonal_(param.data)
+
+        # 4. LSTM-style Initialization
+        def lstm_init(param):
+            if isinstance(param, nn.Parameter):
+                n = param.data.shape[0]
+                start, end = 0, n
+                param.data.uniform_(-1 / math.sqrt(n), 1 / math.sqrt(n))
+
+        # Apply initializations
+        if self.add_prompts == 'final':
+            kaiming_init(self.prompts)
+            kaiming_init(self.w_q.weight)
+            kaiming_init(self.keys)
+
+        elif self.add_prompts == 'every':
+            for i in range(len(self.hidden_prompts_size)):
+                kaiming_init(getattr(self, f'hidden_prompt_{i}'))
+                
+                query_proj = getattr(self, f'block_{i}_query_projection')
+                kaiming_init(query_proj.weight)
+                
+                keys = getattr(self, f'block_{i}_keys')
+                kaiming_init(keys)
+
+            # Last layer
+            kaiming_init(getattr(self, f'hidden_prompt_{len(self.hidden_prompts_size)}'))
+            kaiming_init(self.w_q.weight)
+            kaiming_init(getattr(self, f'block_{len(self.hidden_prompts_size)}_keys'))
+
+    def get_hidden_prompts(self):
+        import yaml
+        with open('./core/config/emb_dim_size.yaml', 'r') as file:
+            config = yaml.safe_load(file)
+
+        hidden_size = torch.tensor([[config[f'{self.transfer}2{self.target}'][i]['D'], config[f'{self.transfer}2{self.target}'][i]['C']] for i in config[f'{self.transfer}2{self.target}'].keys()])
+        return hidden_size
+    
+    def forward(self, x, i_block):
+        if self.add_prompts == 'final':
+            query = self.w_q(x)
+
+            d_k = query.size(-1)
+            qk = torch.einsum('bd,pd->bp', query, self.keys) / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
+            gumbel_samples = F.gumbel_softmax(qk, tau=1.0, hard=True)
+            top1_prompts = torch.einsum('bp,pd->bd', gumbel_samples, self.prompts)
+
+            x = x + self.pen_prompt_coeff*top1_prompts
+        elif self.add_prompts == 'every':
+            query_project = getattr(self, f'block_{i_block}_query_projection')
+            prompts = getattr(self, f'hidden_prompt_{i_block}')
+            keys = getattr(self, f'block_{i_block}_keys')
+
+            if len(x.shape) == 3:
+                query = query_project(x.transpose(1,2))
+                query = query.squeeze(2)
+            elif len(x.shape) == 2:
+                query = query_project(x)
+
+            d_k = query.size(-1)
+            qk = torch.einsum('bd,pd->bp', query, keys) / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
+            gumbel_samples = F.gumbel_softmax(qk, tau=1.0, hard=True)
+
+            if len(x.shape) == 3:
+                top1_prompts = torch.einsum('bp,pd->bd', gumbel_samples, prompts)
+                x = x + self.pen_prompt_coeff * top1_prompts.unsqueeze(-1)
+
+            elif len(x.shape) == 2:
+                top1_prompts = torch.einsum('bp,pd->bd', gumbel_samples, prompts)
+                x = x + self.pen_prompt_coeff * top1_prompts
+
+        return x
+
 class ResNet1D(nn.Module):
     """
     
@@ -157,6 +305,7 @@ class ResNet1D(nn.Module):
         self.use_do = use_do
         self.is_se = is_se
         self.se_ch_low = se_ch_low
+        self.add_prompts = wandb.config.add_prompts
 
         self.downsample_gap = downsample_gap # 2 for base model
         self.increasefilter_gap = increasefilter_gap # 4 for base model
@@ -214,38 +363,7 @@ class ResNet1D(nn.Module):
         # Classifier
         self.main_clf = nn.Linear(out_channels, output_size)
 
-        # Hidden prompt
-        self.add_prompts = wandb.config.add_prompts
-        self.transfer = wandb.config.transfer
-
-        self.hidden_prompts = []
-        self.hidden_prompts_size = self.get_hidden_prompts()
-        if not self.add_prompts == 'None':
-            if self.add_prompts == 'final':
-                self.hidden_prompts_size = self.hidden_prompts_size[-1] #[[D,C],[D,C],[D,C],[D,C]]
-            
-            # for d,c in self.hidden_prompts_size:
-            #     param = nn.Parameter(torch.randn(1, d.item(), c.item(), device='cuda'))
-            #     nn.init.uniform_(param, -1, 1)
-            #     self.hidden_prompts.append(param)
-            
-            for i, (d, c) in enumerate(self.hidden_prompts_size):
-                param_name = f'hidden_prompt_{i}'
-                param = nn.Parameter(torch.randn(1, d.item(), c.item(), device='cuda'))
-                nn.init.uniform_(param, -1, 1)
-                self.register_parameter(param_name, param)
-                self.hidden_prompts.append(param)
-
-        self.hidden_prompts_size = self.hidden_prompts_size[-1] #[[D,C],[D,C],[D,C],[D,C]]
-        
-
-    def get_hidden_prompts(self):
-        import yaml
-        with open('./core/config/emb_dim_size.yaml', 'r') as file:
-            config = yaml.safe_load(file)
-
-        hidden_size = torch.tensor([[config[f'{self.transfer}'][i]['D'], config[f'{self.transfer}'][i]['C']] for i in config[f'{self.transfer}'].keys()])
-        return hidden_size
+        self.penultimate_layer_prompt = PenultimateLayerPrompt()
 
     # def forward(self, x):
     def forward(self, x):
@@ -273,9 +391,10 @@ class ResNet1D(nn.Module):
             if self.verbose:
                 logger.info('i_block: {0}, in_channels: {1}, out_channels: {2}, downsample: {3}'.format(i_block, net.in_channels, net.out_channels, net.downsample))
             out = net(out)
+
             if self.verbose:
                 logger.info(out.shape)
-
+    
         # final prediction
         if self.use_bn:
             out = self.final_bn(out)
@@ -313,10 +432,7 @@ class ResNet1D(nn.Module):
             out = net(out)
 
             if self.add_prompts == 'every':
-                out += self.hidden_prompts[i_block]
-
-            elif self.add_prompts == 'final' and i_block == self.n_block-1:
-                out += self.hidden_prompts[-1]
+                out = self.penultimate_layer_prompt(out, i_block)
 
             if self.verbose:
                 logger.info(out.shape)
@@ -326,6 +442,9 @@ class ResNet1D(nn.Module):
             out = self.final_bn(out)
         h = self.final_relu(out)
         h = h.mean(-1) # (n_batch, out_channels)
+    
+        if self.add_prompts == 'final':
+            h = self.penultimate_layer_prompt(h, i_block+1)
         # logger.info('final pooling', h.shape)
         # ===== Concat x_demo
         # if where == 'every' or where == 'final':
@@ -333,7 +452,6 @@ class ResNet1D(nn.Module):
         
         out = self.main_clf(h)
         return out
-        
 
 def init_weights(m):
     classname = m.__class__.__name__

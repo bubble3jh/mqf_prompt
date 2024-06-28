@@ -1,7 +1,7 @@
 #!/bin/bash
 cd ..
 
-seeds=(0 1 2 3 4)
+seeds=(0 1 2)
 
 for seed in "${seeds[@]}"
 do

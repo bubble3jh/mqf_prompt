@@ -103,13 +103,14 @@ def get_parser():
     parser.add_argument("--train_head", type=str2bool, choices=[True, False], default=False)
     parser.add_argument("--reset_head", type=str2bool, choices=[True, False], default=False)
     parser.add_argument("--stepbystep", type=str2bool, choices=[True, False], default=False)
-    parser.add_argument("--add_freq", type=str2bool, choices=[True, False], default=False)
+    parser.add_argument("--add_freq", type=str2bool, choices=[True, False], default=True)
     parser.add_argument("--train_imag", type=str2bool, choices=[True, False], default=False)
     parser.add_argument("--pass_pca", type=str2bool, choices=[True, False], default=False)
     parser.add_argument("--use_emb_diff", type=str2bool, choices=[True, False], default=False)
-    parser.add_argument("--input_prompting", type=str2bool, choices=[True, False], default=False)
+    # parser.add_argument("--input_prompting", type=str2bool, choices=[True, False], default=False)
 
     parser.add_argument('--add_prompts', type=str, default="None", choices=['every', 'final', 'None'])
+    parser.add_argument("--pen_prompt_coeff", type=float, default=1.0)
 
     return parser
 
@@ -239,7 +240,6 @@ def main(args):
     time_now = time()
     logger.warning(f"Time Used: {ctime(time_now-time_start)}")
 
-
 if __name__ == '__main__':
     parser = get_parser()
     args = parser.parse_args()
@@ -255,14 +255,14 @@ if __name__ == '__main__':
     
     if not args.ignore_wandb:
         import wandb
-        wandb.init(entity='l2p_bp', project='fewshot_transfer_real_head', group=group_name)
+        wandb.init(entity='l2p_bp', project='frequency_prompt_tuning', group=group_name)
         lr = args.lr
         wd = args.wd
         run_name = f'seed:{args.seed}-lr:{lr}-wd:{wd}'
         wandb.run.name = run_name
         wandb.config.update(args)
 
-        wandb.save('./core/propmt_tuning.py')
+        wandb.save('./core/prompt_tuning.py')
         wandb.save('./core/solver_s2l.py')
         
     main(parser.parse_args())

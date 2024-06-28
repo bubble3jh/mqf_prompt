@@ -41,7 +41,7 @@ from omegaconf import OmegaConf
 warnings.filterwarnings("ignore")
 
 coloredlogs.install()
-logger = logging.getLogger(__name__)  
+logger = logging.getLogger(__name__)
 
 #%%
 
@@ -206,7 +206,7 @@ class SolverS2l(Solver):
             # Find scaled ppg_max, ppg_min
             ppg_min = np.min(dm.train_dataloader().dataset.all_ppg)
             ppg_max = np.max(dm.train_dataloader().dataset.all_ppg)
-            stats = [ppg_min, ppg_max] 
+            stats = [ppg_min, ppg_max]
             
             #####################################################
             #####################################################
@@ -224,7 +224,7 @@ class SolverS2l(Solver):
                 model = Custom_model(res_model, data_shape, model_config, self.config, stats, foldIdx)
 
                 for name, param in model.named_parameters():
-                    train_list = ['prompt_learner', 'main_clf'] if self.config.train_head else ['prompt_learner']
+                    train_list = ['prompt_learner', 'main_clf', 'penultimate_layer_prompt'] if self.config.train_head else ['prompt_learner', 'layer_wise_prompt']
                     if any(train_param in name for train_param in train_list):
                         param.requires_grad_(True)
                     else:
