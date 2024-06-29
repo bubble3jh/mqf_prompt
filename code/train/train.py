@@ -112,6 +112,8 @@ def get_parser():
     parser.add_argument('--add_prompts', type=str, default="None", choices=['every', 'final', 'None'])
     parser.add_argument("--pen_prompt_coeff", type=float, default=1.0)
 
+    parser.add_argument("--wandb_project_name", type=str, default='frequency_prompt_tuning')
+
     return parser
 
 def parser_to_config(parser, config):
@@ -255,7 +257,7 @@ if __name__ == '__main__':
     
     if not args.ignore_wandb:
         import wandb
-        wandb.init(entity='l2p_bp', project='frequency_prompt_tuning', group=group_name)
+        wandb.init(entity='l2p_bp', project=f'{args.wandb_project_name}', group=group_name)
         lr = args.lr
         wd = args.wd
         run_name = f'seed:{args.seed}-lr:{lr}-wd:{wd}'

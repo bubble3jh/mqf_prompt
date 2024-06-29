@@ -12,3 +12,4 @@ real_model
 code/train/core/loaders/__pycache__
 code/train/core/__pycache__
 code/train/core/models/__pycache__
+code/train/experiments/wandb/
