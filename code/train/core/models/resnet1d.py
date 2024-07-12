@@ -452,6 +452,42 @@ class ResNet1D(nn.Module):
         
         out = self.main_clf(h)
         return out
+    
+    def get_hidden_emb(self, x):
+        assert len(x.shape) == 3
+
+        # skip batch norm if batchsize<4:
+        if x.shape[0] < 4:    self.use_bn = False
+
+        # first conv
+        if self.verbose:
+            logger.info('input shape', x.shape)
+        out = self.first_block_conv(x)
+        if self.verbose:
+            logger.info('after first conv', out.shape)
+        if self.use_bn:
+            out = self.first_block_bn(out)
+        out = self.first_block_relu(out)
+        out = self.first_block_maxpool(out)
+
+        # residual blocks, every block has two conv
+        for i_block in range(self.n_block):
+            net = self.basicblock_list[i_block]
+            if self.verbose:
+                logger.info('i_block: {0}, in_channels: {1}, out_channels: {2}, downsample: {3}'.format(i_block,
+                                                                                                        net.in_channels,
+                                                                                                        net.out_channels,
+                                                                                                        net.downsample))
+            out = net(out)
+            if self.verbose:
+                logger.info(out.shape)
+
+        # final prediction
+        if self.use_bn:
+            out = self.final_bn(out)
+        h = self.final_relu(out)
+        h = h.mean(-1)  # (n_batch, out_channels)
+        return h
 
 def init_weights(m):
     classname = m.__class__.__name__

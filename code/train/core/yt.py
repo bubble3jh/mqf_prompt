@@ -599,7 +599,6 @@ class SolverS2l(Solver):
             train_df = pd.concat(np.array(all_split_df)[folds_train])
             val_df = pd.concat(np.array(all_split_df)[folds_val])
             test_df = pd.concat(np.array(all_split_df)[folds_test])
-            import pdb; pdb.set_trace()
             dm.setup_kfold(train_df, val_df, test_df)
 
             # Find scaled ppg_max, ppg_min

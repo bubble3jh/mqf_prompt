@@ -113,6 +113,9 @@ def get_parser():
     parser.add_argument("--pen_prompt_coeff", type=float, default=1.0)
 
     parser.add_argument("--wandb_project_name", type=str, default='frequency_prompt_tuning')
+    parser.add_argument("--get_emb", action='store_true')
+    parser.add_argument("--sym_prompt", type=str2bool, choices=[True, False], default=True)
+    parser.add_argument("--save_result", action='store_true')
 
     return parser
 
@@ -257,7 +260,7 @@ if __name__ == '__main__':
     
     if not args.ignore_wandb:
         import wandb
-        wandb.init(entity='l2p_bp', project=f'{args.wandb_project_name}', group=group_name)
+        wandb.init(entity='l2p_bp', project=f"freq_prompt_sym_shot{args.shots}", group=group_name)
         lr = args.lr
         wd = args.wd
         run_name = f'seed:{args.seed}-lr:{lr}-wd:{wd}'

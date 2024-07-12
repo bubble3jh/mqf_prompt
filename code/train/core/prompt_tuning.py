@@ -204,22 +204,34 @@ class L2Prompt_stepbystep(nn.Module):
         d_k = query.size(-1)
         qk = torch.einsum('bid,pid->bip', query, self.keys) / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
         gumbel_samples = F.gumbel_softmax(qk, tau=1.0, hard=True)
+        self.top1_indices = gumbel_samples.argmax(dim=-1).to(torch.int64)
         top1_prompts = torch.einsum('bip,pid->bid', gumbel_samples, self.prompts)
 
         if self.config.add_freq:
             # fft + propmt
             ppg_fft = torch.fft.fft(x['ppg'], dim=-1)
             ppg_fft_real, freq_real_min, freq_real_max = freq_norm(ppg_fft.real)
+
             ppg_fft_imag, freq_imag_min, freq_imag_max = freq_norm(ppg_fft.imag)
             # 1번째부터 trunc_dim+1 번째까지 값을 넣고 나머지에 zero padding
             truncated_prompt_real = torch.zeros_like(x['ppg'], dtype=torch.float)
             truncated_prompt_imag = torch.zeros_like(x['ppg'], dtype=torch.float)
 
             truncated_prompt_real[:,:,1:self.trunc_dim+1] = self.config.global_coeff*top1_prompts[:,:,:self.trunc_dim]
+            if self.config.sym_prompt:
+                # truncated_prompt_real[:,:,-self.trunc_dim:] = self.config.global_coeff*top1_prompts[:,:,:self.trunc_dim]
+                flipped_prompts = torch.flip(top1_prompts[:,:,:self.trunc_dim], dims=[-1])
+                truncated_prompt_real[:,:,-self.trunc_dim:] = self.config.global_coeff * flipped_prompts
+                
             prompt_add_fft_real = freq_denorm(ppg_fft_real + truncated_prompt_real, freq_real_min, freq_real_max)
 
             if self.config.train_imag:
                 truncated_prompt_imag[:,:,1:self.trunc_dim+1] = self.config.global_coeff*top1_prompts[:,:,self.trunc_dim:]
+                if self.config.sym_prompt:
+                    # truncated_prompt_imag[:,:,-self.trunc_dim:] = self.config.global_coeff*top1_prompts[:,:,self.trunc_dim:]
+                    flipped_prompts = torch.flip(top1_prompts[:,:,self.trunc_dim:], dims=[-1])
+                    truncated_prompt_imag[:,:,-self.trunc_dim:] = -1*self.config.global_coeff * flipped_prompts
+                    
                 prompt_add_fft_imag = freq_denorm(ppg_fft_imag + truncated_prompt_imag, freq_imag_min, freq_imag_max)
             else:
                 prompt_add_fft_imag = freq_denorm(ppg_fft_imag, freq_imag_min, freq_imag_max)
@@ -350,11 +362,11 @@ class L2Prompt(nn.Module):
             x_fft = torch.fft.fft(x_ppg, dim=-1)
 
         # top1_indices = gumbel_sample.argmax(dim=-1).clone().detach().to(torch.int64)
-        top1_indices = gumbel_sample.argmax(dim=-1).to(torch.int64)
+        self.top1_indices = gumbel_sample.argmax(dim=-1).to(torch.int64)
 
         if self.config.prompt_weights == 'cos_sim':
             # Compute matching scores and apply softmax to get weights
-            matching_scores = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 3)
+            matching_scores = cos_sim.gather(-1, self.top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 3)
             weights = F.softmax(matching_scores, dim=-1)  # Shape: (batch_size, 3)
         elif self.config.prompt_weights == 'learnable':
             if not self.weight_per_prompt:
@@ -363,7 +375,7 @@ class L2Prompt(nn.Module):
             else:
                 # Use learnable weights
                 weights = torch.stack([
-                    self.learnable_weights[i].gather(0, top1_indices[:, i]) for i in range(3)
+                    self.learnable_weights[i].gather(0, self.top1_indices[:, i]) for i in range(3)
                 ], dim=1)  # Shape: (batch_size, 3)
                 weights = F.softmax(weights, dim=-1)  # Shape: (batch_size, 3)
         elif self.config.prompt_weights == 'attention':
@@ -387,10 +399,21 @@ class L2Prompt(nn.Module):
             truncated_prompt_imag = torch.zeros_like(x_fft, dtype=torch.float)
 
             truncated_prompt_real[:,:,1:self.trunc_dim+1] = self.config.global_coeff*final_prompt[:,:,:self.trunc_dim]
+
+            if self.config.sym_prompt:
+                # truncated_prompt_real[:,:,-self.trunc_dim:] = self.config.global_coeff*final_prompt[:,:,:self.trunc_dim]
+                flipped_prompts = torch.flip(final_prompt[:,:,:self.trunc_dim], dims=[-1])
+                truncated_prompt_real[:,:,-self.trunc_dim:] = self.config.global_coeff * flipped_prompts
+                
             prompt_add_fft_real = freq_denorm(ppg_fft_real + truncated_prompt_real, freq_real_min, freq_real_max)
 
             if self.config.train_imag:
                 truncated_prompt_imag[:,:,1:self.trunc_dim+1] = self.config.global_coeff*final_prompt[:,:,self.trunc_dim:]
+                if self.config.sym_prompt:
+                    # truncated_prompt_imag[:,:,-self.trunc_dim:] = self.config.global_coeff*final_prompt[:,:,self.trunc_dim:]
+                    flipped_prompts = torch.flip(final_prompt[:,:,self.trunc_dim:], dims=[-1])
+                    truncated_prompt_imag[:,:,-self.trunc_dim:] = -1*self.config.global_coeff * flipped_prompts
+                    
                 prompt_add_fft_imag = freq_denorm(ppg_fft_imag + truncated_prompt_imag, freq_imag_min, freq_imag_max)
             else:
                 prompt_add_fft_imag = freq_denorm(ppg_fft_imag, freq_imag_min, freq_imag_max)
@@ -402,13 +425,13 @@ class L2Prompt(nn.Module):
             prompted_signal = self.config.lam * x_ppg + (1-self.config.lam) * self.config.global_coeff*final_prompt
         
         # Calculate pull_constraint loss (similarity loss) using cos_sim
-        # sim_pull = cos_sim.gather(-1, top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
-        # sim_pull = cos_sim.gather(-1, top1_indices).squeeze(-1)
+        # sim_pull = cos_sim.gather(-1, self.top1_indices.unsqueeze(-1)).squeeze(-1)  # Shape: (batch_size, 4)
+        # sim_pull = cos_sim.gather(-1, self.top1_indices).squeeze(-1)
         # sim_loss = torch.clamp(1 - sim_pull.mean(), min=0)
         sim_loss = 0
         # Negative to maximize similarity
 
-        # top_prompt_idx = top1_indices.detach().cpu().numpy()
+        # top_prompt_idx = self.top1_indices.detach().cpu().numpy()
         # wandb.log({"top_prompt_idx": wandb.Table(data=top_prompt_idx, columns=["PCA", "FFT", "Wave"])})
 
         # Calculate entropy penalty to ensure diverse prompt selection
@@ -439,8 +462,6 @@ class Custom_model(pl.LightningModule):
         elif self.config.stepbystep and not self.config.instance:
             self.prompt_learner_glo =L2Prompt_stepbystep(self.config, self.model_config, self.ppg_min, self.ppg_max)
             self.trunc_dim = self.prompt_learner_glo.trunc_dim
-        else:
-            self.prompt_learner_glo =L2Prompt_INS(self.config, self.model_config, self.ppg_min, self.ppg_max)
 
         #Loss Function
         if self.config.group_avg:
@@ -451,6 +472,11 @@ class Custom_model(pl.LightningModule):
         
         self.pca_matrix = None
         self.pca_train_mean = 0
+
+        self.raw_input = []
+        self.prompted_input = []
+        self.hidden_embs = []
+        self.prompt_hist = []
 
     def hook_fn(self, module, input, output):
         self.hidden_output = output
@@ -471,7 +497,7 @@ class Custom_model(pl.LightningModule):
         if self.config.normalize:
             merged = normalizer(x_ppg["ppg"], merged)
         if self.config.clip:
-            merged = torch.clamp(merged, min= self.ppg_min,max=self.ppg_max)
+            merged = torch.clamp(merged, min=self.ppg_min,max=self.ppg_max)
         
         hidden_emb = self.res_model.extract_penultimate_embedding(merged)
 
@@ -485,6 +511,12 @@ class Custom_model(pl.LightningModule):
             pred = self.res_model.model.forward_w_add_prompts(merged)
         else:
             pred = self.res_model(merged)
+
+        if mode=='test' and self.config.get_emb:
+            self.prompt_hist.append(self.prompt_learner_glo.top1_indices)
+            self.raw_input.append(x_ppg['ppg'].squeeze(dim=1))
+            self.prompted_input.append(merged.squeeze(dim=1))
+            self.hidden_embs.append(hidden_emb)
 
         if self.config.group_avg:
             raise ValueError("We do not use group loss")
@@ -577,7 +609,7 @@ class Custom_model(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         self.step_mode = 'test'
-        loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode='test')  
+        loss, pred_bp, t_abp, label, group = self._shared_step(batch, mode='test')
         self.log('test_loss', loss, prog_bar=True)
         return {"loss":loss, "pred_bp":pred_bp, "true_abp":t_abp, "true_bp":label, "group": group}  
 

@@ -84,7 +84,7 @@ parameters:
     distribution: categorical
   clip:
     values:
-      - "true"
+      - "false"
     distribution: categorical
   use_emb_diff:
     values:
