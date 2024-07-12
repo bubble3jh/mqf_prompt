@@ -1,0 +1,6 @@
+method,source,target,spdp_mean,spdp_std
+headOFF,bcg,ppgbp,24.98,1.45
+headOFF,bcg,sensors,23.75,1.24
+headOFF,ppgbp,bcg,16.5,3.88
+headOFF,ppgbp,sensors,26.89,3.46
+headOFF,sensors,ppgbp,24.98,1.5

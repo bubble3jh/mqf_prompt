@@ -1,0 +1,7 @@
+method,source,target,spdp_mean,spdp_std
+ours,bcg,ppgbp,24.91,0.62
+ours,bcg,sensors,25.64,2.7
+ours,ppgbp,bcg,16.53,2.89
+ours,ppgbp,sensors,24.99,1.82
+ours,sensors,bcg,16.12,3.64
+ours,sensors,ppgbp,24.6,0.79

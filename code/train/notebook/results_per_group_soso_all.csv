@@ -1,0 +1,4 @@
+source,target,method,sbp_g0,sbp_g1,sbp_g2,sbp_g3,dbp_g0,dbp_g1,dbp_g2,dbp_g3
+bcg,bcg,zeroshot,25.01 \pm 11.64,21.8 \pm 18.64,36.65 \pm 19.21,49.28 \pm 13.58,7.31 \pm 4.41,8.54 \pm 7.19,13.87 \pm 6.27,16.21 \pm 6.58
+ppgbp,ppgbp,zeroshot,15.52 \pm 8.53,10.53 \pm 3.23,23.56 \pm 10.15,47.24 \pm 13.98,13.61 \pm 1.36,6.44 \pm 2.15,9.4 \pm 3.44,18.65 \pm 6.78
+sensors,sensors,zeroshot,31.77 \pm 3.34,11.32 \pm 3.27,11.19 \pm 2.98,36.9 \pm 4.37,7.83 \pm 1.72,5.74 \pm 0.95,6.37 \pm 0.21,11.08 \pm 1.03
