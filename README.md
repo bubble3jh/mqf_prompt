@@ -3,10 +3,11 @@
 This is the official pytorch implementation of the paper "Multi-Query Frequency Prompting for Physiological Signal Domain Adaptation, Kang & Byun et al.".
 
 ## Quick Summary
-![Motivation_v2](https://github.com/user-attachments/assets/2933c80d-e130-4dfd-b00a-5b79c70331e5)
+
+![Motivation_v2](https://github.com/user-attachments/assets/29397798-9e08-43fe-9acd-f0a800080a9a)
 Adding a prompt in the frequency domain and reconstructing the prompted signal is much more robust to pulse shift.
 
-![prompting_method_v2](https://github.com/user-attachments/assets/46c08720-fa35-4e0f-bb34-861808c3e02a)
+![prompting_method_v2](https://github.com/user-attachments/assets/bc81898c-904c-41b4-838a-5d3346d5d7e6)
 Selecting prompts with various features of the signal can make synthesizing prompts flexible and interpretable.
 
 ![comparison_ppg_mod](https://github.com/user-attachments/assets/974c8365-d165-4e1f-b17e-d8a2a2fb634d)
