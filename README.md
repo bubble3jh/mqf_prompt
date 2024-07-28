@@ -13,6 +13,7 @@ Please refer to this [repository](https://github.com/inventec-ai-center/bp-bench
 - `--config_file`: Path to the configuration file for the experiment, which is according to the target dataset.
 - `--lr`: Learning rate for the optimizer.
 - `--wd`: Weight decay (L2 regularization) for the optimizer.
+- `--batch_size`: Batch size.
 - `--global_coeff`: Coefficient for the prompt, adding original signal.
 - `--method` : "original" for the baselines and "prompt_global" for ours.
 - `--normalize`: Normalize prompted input to distribution of source dataset.
@@ -63,26 +64,17 @@ Please refer to this [repository](https://github.com/inventec-ai-center/bp-bench
 ## Implement Code Example
 
 ```
-pip intall -r requirements.txt
+pip install -r requirements.txt
 
-cd L2P_code/code/train
+cd /code/train
 
-#BCG (10epoch)
-python train.py python train.py --lamb 1 --config_file core/config/dl/resnet/resnet_bcg.yaml --method prompt_global --k 1 --num_pool 20  --lr 1e-2 --penalty --glonorm --cnn
+#Sweep all train setting
+bash experiments/bash_for_bash.sh
 
-#PPGBP (100epoch)
-python train.py python train.py --lamb 1 --config_file core/config/dl/resnet/resnet_ppgbp.yaml --method prompt_global --k 1 --num_pool 10  --lr 1e-3 --wd 1e-3 --cnn
-
-#Sensors (5epcoh)
-python train.py python train.py --lamb 1 --config_file core/config/dl/resnet/resnet_sensors.yaml --method prompt_global --k 1 --num_pool 10  --lr 1e-2 --wd 1e-3 --cnn
+#Sensors to BCG transfer 
+python train.py --transfer=sensors --target=bcg --batch_size=6 --clip=false --config_file=core/config/dl/resnet/resnet_bcg.yaml --diff_loss_weight=0.4 --epochs=10 --global_coeff=0.1 --lr=0.009 --method=prompt_global --normalize=true --num_pool=9 --pca_dim=16 --query_dim=16 --reset_head=false --shots=10 --train_head=true --train_imag=true --trunc_dim=50 --use_emb_diff=true --wd=0.03
 
 ```
 
-## Dataset & model
-```
-cp /mlainas/yewon/bp-benchmark/bp-algorithm/datasets bp-algorithm/datasets
-cp /mlainas/yewon/bp-benchmark/bp-algorithm/code/train/real_model bp-algorithm/code/train/real_model
-
-```
 
 
