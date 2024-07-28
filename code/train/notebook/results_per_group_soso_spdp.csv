@@ -1,4 +1,0 @@
-source,target,method,spdp_mean_g0,spdp_mean_g1,spdp_mean_g2,spdp_mean_g3,spdp_std_g0,spdp_std_g1,spdp_std_g2,spdp_std_g3
-bcg,bcg,zeroshot,31.91,29.3,48.68,65.29,12.07,24.24,26.1,19.95
-ppgbp,ppgbp,zeroshot,29.13,15.3,31.64,65.6,9.28,5.81,13.15,20.3
-sensors,sensors,zeroshot,39.59,15.63,13.43,45.47,4.44,4.32,3.5,5.71

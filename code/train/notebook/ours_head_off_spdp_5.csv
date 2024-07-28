@@ -1,7 +1,0 @@
-method,source,target,spdp_mean,spdp_std
-headOFF,bcg,ppgbp,25.35,1.31
-headOFF,bcg,sensors,24.15,1.79
-headOFF,ppgbp,bcg,17.9,2.28
-headOFF,ppgbp,sensors,28.31,4.1
-headOFF,sensors,bcg,16.18,3.37
-headOFF,sensors,ppgbp,25.02,0.95

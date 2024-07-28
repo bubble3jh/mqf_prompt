@@ -1,7 +1,0 @@
-source,target,method,spdp_mean_g0,spdp_mean_g1,spdp_mean_g2,spdp_mean_g3,spdp_std_g0,spdp_std_g1,spdp_std_g2,spdp_std_g3
-bcg,ppgbp,ours,57.37,18.65,12.69,46.82,4.22,3.62,2.01,5.56
-bcg,sensors,ours,43.6,19.18,10.96,41.4,4.63,4.42,2.52,4.76
-ppgbp,bcg,ours,52.33,17.89,9.91,26.0,9.07,4.56,0.86,6.07
-ppgbp,sensors,ours,44.81,19.7,10.91,40.9,4.92,4.78,1.53,3.23
-sensors,bcg,ours,42.28,11.19,14.95,35.44,9.67,2.22,2.82,8.76
-sensors,ppgbp,ours,59.14,18.39,11.76,46.74,0.36,0.77,1.59,4.73
