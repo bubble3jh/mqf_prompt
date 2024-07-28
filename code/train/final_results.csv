@@ -1,7 +1,0 @@
-Transfer,bcg,bcg,ppgbp,ppgbp,sensors,sensors,bcg,bcg,ppgbp,ppgbp,sensors,sensors
-Target,spdp,spdp,spdp,spdp,spdp,spdp,gal,gal,gal,gal,gal,gal
-Metric,ppgbp,sensors,bcg,sensors,bcg,ppgbp,ppgbp,sensors,bcg,sensors,bcg,ppgbp
-Baseline,,,,,,,,,,,,
-ft,24.03±0.94,20.75±0.59,28.47±0.16,27.59±0.27,29.79±0.06,35.30±15.40,35.93±0.94,32.82±0.36,34.72±0.05,35.59±0.26,30.73±0.13,31.71±1.71
-lp,23.86±9.02,22.25±1.85,35.39±1.97,25.97±0.12,35.92±0.28,33.54±5.08,33.97±13.48,33.36±1.78,43.25±1.73,35.27±0.37,33.16±0.14,31.81±0.73
-scratch,20.64±0.64,21.86±2.55,27.26±1.11,26.63±0.46,29.15±0.34,29.02±0.24,32.40±1.92,33.09±3.36,36.98±1.54,36.32±0.82,30.16±0.11,30.08±0.20
